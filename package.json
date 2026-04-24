@@ -1,0 +1,76 @@
+{
+  "name": "kb-dashboard",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "author": "haolin",
+  "description": "个人知识库三源聚合看板 — 学习项目 / Obsidian / 公司笔记",
+  "scripts": {
+    "dev": "concurrently -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "node --watch server/index.js",
+    "dev:web": "vite",
+    "app": "concurrently -n api,web,app -c yellow,cyan,magenta -k \"npm:dev:api\" \"npm:dev:web\" \"npm:app:win\"",
+    "app:win": "wait-on http://localhost:5173 && electron electron/main.cjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "preview-design": "npx --yes serve design-preview -p 5180 -s",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.sanwan.kb-dashboard",
+    "productName": "kb-dashboard",
+    "asar": true,
+    "asarUnpack": [
+      "server/**/*",
+      "node_modules/fastify/**/*",
+      "node_modules/@fastify/**/*",
+      "node_modules/fastify-plugin/**/*",
+      "node_modules/minisearch/**/*",
+      "node_modules/fast-glob/**/*",
+      "node_modules/gray-matter/**/*",
+      "node_modules/marked/**/*",
+      "node_modules/chokidar/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server/**/*",
+      "package.json"
+    ],
+    "electronDownload": {
+      "mirror": "https://registry.npmmirror.com/-/binary/electron/"
+    },
+    "mac": {
+      "target": [{ "target": "dir", "arch": ["arm64"] }],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "gatekeeperAssess": false
+    }
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "chokidar": "^5.0.0",
+    "fast-glob": "^3.3.3",
+    "fastify": "^5.8.5",
+    "gray-matter": "^4.0.3",
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.2",
+    "mermaid": "^11.14.0",
+    "minisearch": "^7.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.3",
+    "concurrently": "^9.2.1",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "vite": "^5.4.11",
+    "wait-on": "^9.0.5"
+  }
+}

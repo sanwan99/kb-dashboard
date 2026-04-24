@@ -1,0 +1,230 @@
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import path from 'node:path';
+
+import { SOURCES, SOURCES_BY_ID, safeResolve } from './lib/sources.js';
+import { listDir } from './lib/tree.js';
+import { renderMarkdown } from './lib/markdown.js';
+import { parseProgress } from './lib/learn.js';
+import { buildHomeOverview } from './lib/stats.js';
+import { buildSearchIndex, searchIndex, searchStats } from './lib/search.js';
+import { buildObsidianIndex, getBacklinks, getNeighbors, getAllTags, obsidianStats } from './lib/obsidian-index.js';
+import { startWatchers, subscribe, setRebuildHandler } from './lib/watcher.js';
+import { guessMime } from './lib/mime.js';
+
+const PORT = Number(process.env.PORT || 5174);
+const HOST = '127.0.0.1';
+
+const app = Fastify({ logger: true });
+
+await app.register(cors, { origin: true });
+
+// GET /api/sources — 三个源的元信息
+app.get('/api/sources', async () => {
+  const out = [];
+  for (const s of SOURCES) {
+    let exists = true;
+    try {
+      await fs.access(s.root);
+    } catch {
+      exists = false;
+    }
+    out.push({
+      id: s.id,
+      kind: s.kind,
+      label: s.label,
+      color: s.color,
+      root: s.root,
+      realRoot: s.realRoot,
+      displayPath: s.displayPath,
+      exists,
+      fileCount: null,
+    });
+  }
+  return { sources: out };
+});
+
+// GET /api/tree?source=...&path=... — 单级目录列表（点开再发下一级）
+app.get('/api/tree', async (req, reply) => {
+  const { source, path: p = '' } = req.query;
+  if (!source) return reply.code(400).send({ error: 'source required' });
+  try {
+    const { abs, rel } = safeResolve(source, p);
+    const stat = await fs.stat(abs);
+    if (!stat.isDirectory()) {
+      return reply.code(400).send({ error: 'not a directory' });
+    }
+    const entries = await listDir(abs, rel);
+    return { source, path: rel, entries };
+  } catch (err) {
+    req.log.warn({ err }, 'tree failed');
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// GET /api/file?source=...&path=... — 文件内容 + 渲染 HTML + frontmatter
+app.get('/api/file', async (req, reply) => {
+  const { source, path: p } = req.query;
+  if (!source || !p) return reply.code(400).send({ error: 'source and path required' });
+  try {
+    const { abs, rel, source: src } = safeResolve(source, p);
+    const stat = await fs.stat(abs);
+    if (!stat.isFile()) return reply.code(400).send({ error: 'not a file' });
+
+    const ext = path.extname(abs).slice(1).toLowerCase();
+    const buf = await fs.readFile(abs);
+
+    if (ext === 'md' || ext === 'markdown') {
+      const raw = buf.toString('utf8');
+      const { html, meta, raw: content } = renderMarkdown(raw, { source: src.id, filePath: rel });
+      return {
+        source: src.id,
+        path: rel,
+        ext,
+        size: stat.size,
+        mtime: stat.mtime.toISOString(),
+        meta,
+        html,
+        raw: content,
+      };
+    }
+
+    return {
+      source: src.id,
+      path: rel,
+      ext,
+      size: stat.size,
+      mtime: stat.mtime.toISOString(),
+      binary: true,
+    };
+  } catch (err) {
+    req.log.warn({ err }, 'file failed');
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// GET /api/blob?source=...&path=... — 二进制流（图片等）
+app.get('/api/blob', async (req, reply) => {
+  const { source, path: p } = req.query;
+  if (!source || !p) return reply.code(400).send({ error: 'source and path required' });
+  try {
+    const { abs } = safeResolve(source, p);
+    const stat = await fs.stat(abs);
+    if (!stat.isFile()) return reply.code(400).send({ error: 'not a file' });
+    const ext = path.extname(abs).slice(1).toLowerCase();
+    reply.header('Content-Type', guessMime(ext));
+    reply.header('Content-Length', stat.size);
+    reply.header('Cache-Control', 'public, max-age=3600');
+    return reply.send(createReadStream(abs));
+  } catch (err) {
+    req.log.warn({ err }, 'blob failed');
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// GET /api/events — SSE 推送文件变更
+app.get('/api/events', async (req, reply) => {
+  reply.raw.setHeader('Content-Type', 'text/event-stream');
+  reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+  reply.raw.setHeader('Connection', 'keep-alive');
+  reply.raw.setHeader('X-Accel-Buffering', 'no');
+  reply.raw.flushHeaders?.();
+  reply.raw.write(`: hello\n\n`);
+
+  const send = (evt) => {
+    try {
+      reply.raw.write(`data: ${JSON.stringify(evt)}\n\n`);
+    } catch { /* client gone */ }
+  };
+  const unsub = subscribe(send);
+  const keepAlive = setInterval(() => {
+    try { reply.raw.write(': ping\n\n'); } catch {}
+  }, 25000);
+
+  req.raw.on('close', () => {
+    clearInterval(keepAlive);
+    unsub();
+    try { reply.raw.end(); } catch {}
+  });
+
+  // 不 return Promise，让连接保持
+  return reply;
+});
+
+// GET /api/learn/progress — 解析 learn 源根下的 progress.md
+app.get('/api/learn/progress', async (req, reply) => {
+  try {
+    const data = await parseProgress(SOURCES_BY_ID.learn.root);
+    return data;
+  } catch (err) {
+    req.log.warn({ err }, 'learn progress failed');
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// GET /api/home/overview — 首页聚合
+app.get('/api/home/overview', async (req, reply) => {
+  try {
+    return await buildHomeOverview();
+  } catch (err) {
+    req.log.warn({ err }, 'home overview failed');
+    return reply.code(500).send({ error: err.message });
+  }
+});
+
+// GET /api/search?q=...&source=learn,obsidian&limit=60
+app.get('/api/search', async (req) => {
+  const { q, source, limit } = req.query;
+  if (!q || String(q).trim() === '') {
+    return { results: [], total: 0, grouped: { learn: [], obsidian: [], work: [] }, ...searchStats(), took: 0 };
+  }
+  const sources = source ? String(source).split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const t0 = Date.now();
+  const r = searchIndex(String(q), { sources, limit: limit ? Number(limit) : 60 });
+  return { ...r, took: Date.now() - t0, query: String(q) };
+});
+
+app.get('/api/search/stats', async () => searchStats());
+
+// Obsidian 专项
+app.get('/api/obsidian/backlinks', async (req, reply) => {
+  const { path: p } = req.query;
+  if (!p) return reply.code(400).send({ error: 'path required' });
+  return { path: String(p), backlinks: getBacklinks(String(p)), stats: obsidianStats() };
+});
+app.get('/api/obsidian/tags', async () => ({ tags: getAllTags(), stats: obsidianStats() }));
+app.get('/api/obsidian/stats', async () => obsidianStats());
+
+app.get('/api/obsidian/neighbors', async (req, reply) => {
+  const { path: p } = req.query;
+  if (!p) return reply.code(400).send({ error: 'path required' });
+  return getNeighbors(String(p));
+});
+
+app.get('/api/health', async () => ({
+  ok: true,
+  sources: SOURCES.map((s) => s.id),
+  search: searchStats(),
+  obsidian: obsidianStats(),
+}));
+
+// 启动后后台构建索引 + 开监听
+app.ready().then(() => {
+  buildSearchIndex(app.log).catch((err) => app.log.error({ err }, 'search index build failed'));
+  buildObsidianIndex(app.log).catch((err) => app.log.error({ err }, 'obsidian index build failed'));
+  startWatchers(app.log);
+  // 文件变更防抖 5 秒后批量重建索引
+  setRebuildHandler(async () => {
+    app.log.info('rebuilding indexes after fs changes');
+    await Promise.allSettled([
+      buildSearchIndex(app.log),
+      buildObsidianIndex(app.log),
+    ]);
+  });
+});
+
+app.listen({ port: PORT, host: HOST })
+  .then((addr) => app.log.info(`kb-dashboard api ready at ${addr}`))
+  .catch((err) => { app.log.error(err); process.exit(1); });

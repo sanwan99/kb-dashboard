@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+*.log
+dist/
+release/
+.vite/
+
+# 三个源的软链不入 git（每台机需手动建）
+data/learn
+data/obsidian
+data/work

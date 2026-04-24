@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>个人知识库 · 设计稿</title>
+<link rel="stylesheet" href="styles/theme.css"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #E8E4D9; }
+  body { font-family: "Inter Tight", system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="components/primitives.jsx"></script>
+<script type="text/babel" src="pages/home.jsx"></script>
+<script type="text/babel" src="pages/home-threecol.jsx"></script>
+<script type="text/babel" src="pages/home-dashboard.jsx"></script>
+<script type="text/babel" src="pages/learn-spacious.jsx"></script>
+<script type="text/babel" src="pages/learn-compact.jsx"></script>
+<script type="text/babel" src="pages/obsidian.jsx"></script>
+<script type="text/babel" src="pages/work.jsx"></script>
+<script type="text/babel" src="pages/search.jsx"></script>
+<script type="text/babel" src="pages/prefs.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const W = 1280, H = 840;
+
+const App = () => (
+  <DesignCanvas>
+    <DCSection id="intro" title="个人知识库 · 看板" subtitle="三源聚合 · Claude 风 · 全高保真静态稿">
+      <DCArtboard id="readme" label="00 · 设计说明" width={640} height={H} bg="#FAF9F5">
+        <div className="kb-root" style={{ padding: 36, fontSize: 14, lineHeight: 1.7, color:'var(--ink)', height:'100%', overflow:'auto', fontFamily:'var(--font-sans)' }}>
+          <h1 className="kb-serif" style={{ fontSize: 28, margin: 0, letterSpacing:'-0.02em' }}>个人知识库看板</h1>
+          <div style={{ color:'var(--ink-sub)', marginTop: 6, marginBottom: 20, fontSize: 13 }}>本地 Markdown 聚合 · 学习 / Obsidian / 公司</div>
+
+          <h2 className="kb-serif" style={{ fontSize: 17, marginTop: 20, marginBottom: 8 }}>视觉方向</h2>
+          <p>Claude 风 — 暖米白底（<code className="kb-mono" style={{fontSize:12}}>#FAF9F5</code>）、衬线标题（Source Serif 4）、无衬线正文（Inter Tight）、克制的分隔线与卡片。不用渐变、不用阴影堆叠。</p>
+
+          <h2 className="kb-serif" style={{ fontSize: 17, marginTop: 20, marginBottom: 8 }}>三源色</h2>
+          <div style={{ display:'flex', gap: 8, marginBottom: 12 }}>
+            <span className="src-pill learn"><span className="src-dot learn"/> 学习项目</span>
+            <span className="src-pill obsidian"><span className="src-dot obsidian"/> Obsidian</span>
+            <span className="src-pill work"><span className="src-dot work"/> 公司项目</span>
+          </div>
+          <p>作为 8px 色点 + 淡底标签出现，从不做整块背景，避免干扰内容。</p>
+
+          <h2 className="kb-serif" style={{ fontSize: 17, marginTop: 20, marginBottom: 8 }}>画布指南</h2>
+          <ul>
+            <li><b>首页</b> · 默认"上下三段"；另有"三列并排"和"仪表盘"两个变体</li>
+            <li><b>学习项目</b> · 呼吸感版 + 紧凑版（对应你提的密度维度）</li>
+            <li><b>Obsidian</b> · PARA 树 + Markdown + 反链抽屉 + 局部图谱</li>
+            <li><b>公司项目</b> · md/codex/current/ 在树里做活跃高亮</li>
+            <li><b>全局搜索</b> · 顶部常驻 → 按源分组的结果页</li>
+            <li><b>首选项</b> · 组件清单 · 推荐技术栈 · 启动命令</li>
+          </ul>
+
+          <h2 className="kb-serif" style={{ fontSize: 17, marginTop: 20, marginBottom: 8 }}>交互约定</h2>
+          <ul>
+            <li><span className="kc">⌘</span> <span className="kc">K</span> 全局搜索；<span className="kc">⌘</span> <span className="kc">⇧</span> <span className="kc">↩</span> 从断点继续</li>
+            <li><code>[[wikilink]]</code> 同窗打开；<code>![[file.png]]</code> 行内渲染；broken link 划删除线红字</li>
+            <li>学习项目页进入后默认聚焦当前断点文件和对应 tab</li>
+          </ul>
+
+          <div className="kb-card" style={{ marginTop: 20, padding: 14, background:'var(--bg-tint)' }}>
+            <div className="kb-mono" style={{ fontSize: 11, color:'var(--ink-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom: 4 }}>下一步</div>
+            <div style={{ fontSize: 13, color:'var(--ink-sub)' }}>拿着这套稿子和最后两页的组件清单 + 技术栈，就能直接开工。问题：是否要做夜间主题变体？</div>
+          </div>
+        </div>
+      </DCArtboard>
+    </DCSection>
+
+    <DCSection id="home" title="首页" subtitle="三个布局变体 — 挑一个主方向">
+      <DCArtboard id="home-default" label="A · 上下三段卡片墙（默认）" width={W} height={H} bg="#E8E4D9"><HomePage/></DCArtboard>
+      <DCArtboard id="home-threecol" label="B · 三列并排（每源一列）" width={W} height={H} bg="#E8E4D9"><HomeThreeCol/></DCArtboard>
+      <DCArtboard id="home-dashboard" label="C · 仪表盘（学习为主轴）" width={W} height={H} bg="#E8E4D9"><HomeDashboard/></DCArtboard>
+    </DCSection>
+
+    <DCSection id="learn" title="学习项目页" subtitle="断点 + 阶段 + 复习 · 两种信息密度">
+      <DCArtboard id="learn-spacious" label="A · 呼吸感" width={W} height={H} bg="#E8E4D9"><LearnPageSpacious/></DCArtboard>
+      <DCArtboard id="learn-compact" label="B · 紧凑（IDE 风）" width={W} height={H} bg="#E8E4D9"><LearnPageCompact/></DCArtboard>
+    </DCSection>
+
+    <DCSection id="obsidian" title="Obsidian 浏览" subtitle="PARA · wikilink · 反链 · 局部图谱">
+      <DCArtboard id="obsidian-main" label="PARA 树 + 主区 + 反链抽屉" width={W} height={H} bg="#E8E4D9"><ObsidianPage/></DCArtboard>
+    </DCSection>
+
+    <DCSection id="work" title="公司项目笔记" subtitle="md/codex/current/ 高亮为活跃任务">
+      <DCArtboard id="work-main" label="项目列表 + iam 活跃任务" width={W} height={H} bg="#E8E4D9"><WorkPage/></DCArtboard>
+    </DCSection>
+
+    <DCSection id="search" title="全局搜索" subtitle="顶部常驻搜索框 · 跨三源结果分组">
+      <DCArtboard id="search-main" label="按源分组的结果页" width={W} height={H} bg="#E8E4D9"><SearchPage/></DCArtboard>
+    </DCSection>
+
+    <DCSection id="prefs" title="首选项 · 组件清单 · 技术栈" subtitle="设置 + handoff 材料">
+      <DCArtboard id="prefs-main" label="首选项 / 组件 / 技术栈" width={W} height={H} bg="#E8E4D9"><PrefsPage/></DCArtboard>
+    </DCSection>
+  </DesignCanvas>
+);
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
