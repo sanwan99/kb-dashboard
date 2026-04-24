@@ -9,7 +9,7 @@ import { SOURCES, SOURCES_BY_ID, safeResolve } from './lib/sources.js';
 import { listDir } from './lib/tree.js';
 import { renderMarkdown } from './lib/markdown.js';
 import { parseProgress } from './lib/learn.js';
-import { buildHomeOverview } from './lib/stats.js';
+import { buildHomeOverview, listRecent } from './lib/stats.js';
 import { buildSearchIndex, searchIndex, searchStats } from './lib/search.js';
 import { buildObsidianIndex, getBacklinks, getNeighbors, getAllTags, obsidianStats } from './lib/obsidian-index.js';
 import { startWatchers, subscribe, setRebuildHandler } from './lib/watcher.js';
@@ -221,6 +221,22 @@ app.get('/api/home/overview', async (req, reply) => {
     return await buildHomeOverview();
   } catch (err) {
     req.log.warn({ err }, 'home overview failed');
+    return reply.code(500).send({ error: err.message });
+  }
+});
+
+// GET /api/recent?source=work&limit=50 — 某源下最近修改的 md 文件
+app.get('/api/recent', async (req, reply) => {
+  const { source, limit } = req.query;
+  if (!source || !SOURCES_BY_ID[source]) {
+    return reply.code(400).send({ error: 'invalid source' });
+  }
+  const n = Math.min(200, Math.max(1, Number(limit) || 50));
+  try {
+    const items = await listRecent(source, n);
+    return { source, items };
+  } catch (err) {
+    req.log.warn({ err }, 'recent failed');
     return reply.code(500).send({ error: err.message });
   }
 });

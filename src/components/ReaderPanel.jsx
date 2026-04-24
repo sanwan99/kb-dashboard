@@ -4,6 +4,7 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 import { Icon } from './primitives.jsx';
 import { usePrefs } from '../lib/usePrefs.js';
+import { useTheme } from '../lib/useTheme.js';
 import { getCachedSources } from '../lib/api.js';
 
 function slugify(text) {
@@ -144,33 +145,150 @@ export function ErrorState({ msg }) {
 let mermaidPromise = null;
 function loadMermaid() {
   if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then((m) => {
-      const mermaid = m.default;
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: 'neutral',
-        fontFamily: 'var(--font-sans), sans-serif',
-        securityLevel: 'strict',
-      });
-      return mermaid;
-    });
+    mermaidPromise = import('mermaid').then((m) => m.default);
   }
   return mermaidPromise;
 }
 
-async function enhanceRendered(container, { renderMermaid = true } = {}) {
+// 基于项目 CSS 变量构造 mermaid themeVariables，跟随 light/dark 主题。
+// 配色尽量贴 Claude 风：暖米白 + 节点白底、暖橙边框，线条走 ink-muted。
+function computeMermaidConfig() {
+  const cs = typeof window !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+  const v = (name, fallback = '') => (cs ? cs.getPropertyValue(name).trim() : '') || fallback;
+  const isDark = typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark';
+
+  const ink = v('--ink', isDark ? '#E6DFD0' : '#1F1E1B');
+  const inkSub = v('--ink-sub', isDark ? '#C2BBAC' : '#53504A');
+  const inkMuted = v('--ink-muted', isDark ? '#8A857A' : '#8A857A');
+  const bg = v('--bg', isDark ? '#1a1816' : '#FAF9F5');
+  const bgRaised = v('--bg-raised', isDark ? '#26231f' : '#FFFFFF');
+  const bgTint = v('--bg-tint', isDark ? '#1f1d1a' : '#F5F2EA');
+  const bgSunk = v('--bg-sunk', isDark ? '#141311' : '#F2EFE6');
+  const border = v('--border', isDark ? '#3a3631' : '#E6E1D4');
+  const work = v('--src-work', '#C77A35');
+  const workBg = v('--src-work-bg', isDark ? '#3b2c19' : '#F7ECDC');
+  const learn = v('--src-learn', '#3766B8');
+  const learnBg = v('--src-learn-bg', isDark ? '#1e2a3e' : '#E7EEF9');
+  const obsidian = v('--src-obsidian', '#7A5AB8');
+  const obsidianBg = v('--src-obsidian-bg', isDark ? '#2c2440' : '#EDE8F7');
+
+  return {
+    startOnLoad: false,
+    theme: 'base',
+    securityLevel: 'strict',
+    fontFamily: 'Inter Tight, ui-sans-serif, system-ui, sans-serif',
+    themeVariables: {
+      // 基础文字 / 背景
+      background: bg,
+      mainBkg: bgRaised,
+      textColor: ink,
+      fontFamily: 'Inter Tight, ui-sans-serif, system-ui, sans-serif',
+      fontSize: '13px',
+
+      // 节点三种主题色：暖橙 / 米白 / 暖底
+      primaryColor: bgRaised,
+      primaryTextColor: ink,
+      primaryBorderColor: work,
+      secondaryColor: workBg,
+      secondaryTextColor: ink,
+      secondaryBorderColor: work,
+      tertiaryColor: learnBg,
+      tertiaryTextColor: ink,
+      tertiaryBorderColor: learn,
+
+      // 连线 / 边文字
+      lineColor: inkMuted,
+      edgeLabelBackground: bg,
+
+      // 子图（cluster）
+      clusterBkg: bgTint,
+      clusterBorder: border,
+      titleColor: ink,
+
+      // 注释 / note
+      noteBkgColor: isDark ? '#2f2a1f' : '#FFF6E3',
+      noteTextColor: ink,
+      noteBorderColor: isDark ? '#5c4a2a' : '#E6D4A8',
+
+      // 时序图 actor
+      actorBkg: bgRaised,
+      actorBorder: work,
+      actorTextColor: ink,
+      actorLineColor: inkMuted,
+      signalColor: ink,
+      signalTextColor: ink,
+      labelBoxBkgColor: workBg,
+      labelBoxBorderColor: work,
+      labelTextColor: ink,
+      loopTextColor: ink,
+      activationBkgColor: workBg,
+      activationBorderColor: work,
+
+      // 甘特
+      sectionBkgColor: bgTint,
+      sectionBkgColor2: bgSunk,
+      taskBkgColor: learnBg,
+      taskTextColor: ink,
+      taskTextOutsideColor: inkSub,
+      taskBorderColor: learn,
+      gridColor: border,
+      doneTaskBkgColor: obsidianBg,
+      doneTaskBorderColor: obsidian,
+      critBorderColor: v('--danger', '#B5452E'),
+      critBkgColor: isDark ? '#3a1c1c' : '#F7E1DC',
+
+      // 饼图调色盘（沿用三源色）
+      pie1: work,
+      pie2: learn,
+      pie3: obsidian,
+      pie4: v('--ok', '#3E8E5E'),
+      pie5: v('--warn', '#B77A22'),
+    },
+  };
+}
+
+function attachCopyButton(pre, codeEl) {
+  if (!pre || pre.dataset.copyDone === '1') return;
+  pre.dataset.copyDone = '1';
+  pre.style.position = 'relative';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'md-copy-btn';
+  btn.textContent = '复制';
+  btn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = codeEl.textContent || '';
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = '已复制';
+      btn.classList.add('copied');
+    } catch {
+      btn.textContent = '失败';
+    }
+    setTimeout(() => {
+      btn.textContent = '复制';
+      btn.classList.remove('copied');
+    }, 1500);
+  });
+  pre.appendChild(btn);
+}
+
+async function enhanceRendered(container, { renderMermaid = true, onRequestZoom } = {}) {
   if (!container) return;
 
-  // 1. 代码块语法高亮（跳过 mermaid）
+  // 1. 代码块语法高亮 + 复制按钮（跳过 mermaid）
   const codeBlocks = container.querySelectorAll('pre > code');
   codeBlocks.forEach((el) => {
     const classes = el.className || '';
     if (classes.includes('language-mermaid')) return;
-    if (el.dataset.hljsDone === '1') return;
-    try {
-      hljs.highlightElement(el);
-      el.dataset.hljsDone = '1';
-    } catch { /* ignore */ }
+    if (el.dataset.hljsDone !== '1') {
+      try {
+        hljs.highlightElement(el);
+        el.dataset.hljsDone = '1';
+      } catch { /* ignore */ }
+    }
+    attachCopyButton(el.parentElement, el);
   });
 
   // 2. Mermaid 渲染（可由 prefs 关闭）
@@ -178,6 +296,8 @@ async function enhanceRendered(container, { renderMermaid = true } = {}) {
   const mermaidBlocks = container.querySelectorAll('pre > code.language-mermaid');
   if (mermaidBlocks.length > 0) {
     const mermaid = await loadMermaid();
+    // 每次渲染前用最新 CSS 变量初始化，跟随 light/dark 主题
+    mermaid.initialize(computeMermaidConfig());
     let idx = 0;
     for (const el of mermaidBlocks) {
       if (el.dataset.mermaidDone === '1') continue;
@@ -187,6 +307,12 @@ async function enhanceRendered(container, { renderMermaid = true } = {}) {
       try {
         const { svg } = await mermaid.render(`mermaid-${Date.now()}-${idx++}`, src);
         wrapper.innerHTML = svg;
+        wrapper.title = '双击放大';
+        wrapper.style.cursor = 'zoom-in';
+        wrapper.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          if (typeof onRequestZoom === 'function') onRequestZoom(svg);
+        });
       } catch (err) {
         wrapper.innerHTML = `<div class="md-mermaid-error">Mermaid 渲染失败: ${String(err.message || err)}</div><pre><code>${src.replace(/</g, '&lt;')}</code></pre>`;
       }
@@ -210,7 +336,9 @@ export function MarkdownView({ path, file, badge, onToc }) {
   const [toc, setToc] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [sources, setSources] = useState([]);
+  const [zoomedSvg, setZoomedSvg] = useState(null);
   const prefs = usePrefs();
+  const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -223,8 +351,15 @@ export function MarkdownView({ path, file, badge, onToc }) {
   const mtime = file.mtime ? new Date(file.mtime).toLocaleString('zh-CN', { hour12: false }) : '';
 
   // 渲染后处理：代码高亮 / Mermaid / 抽 TOC / 接管 a 链接
+  // 依赖 resolvedTheme：主题切换时把 innerHTML 重置，让 mermaid 等重新按新配色渲染
   useEffect(() => {
-    enhanceRendered(mdRef.current, { renderMermaid: prefs.behavior.renderMermaid });
+    if (mdRef.current && mdRef.current.innerHTML !== file.html) {
+      mdRef.current.innerHTML = file.html;
+    }
+    enhanceRendered(mdRef.current, {
+      renderMermaid: prefs.behavior.renderMermaid,
+      onRequestZoom: setZoomedSvg,
+    });
     processLinks(mdRef.current, sources, navigate, {
       sourceId: file?.source,
       mdPath: path,
@@ -245,7 +380,7 @@ export function MarkdownView({ path, file, badge, onToc }) {
     });
     setToc(items);
     setActiveId(items[0]?.id || null);
-  }, [file?.html, prefs.behavior.renderMermaid, sources]);
+  }, [file?.html, prefs.behavior.renderMermaid, sources, resolvedTheme]);
 
   // 滚动时高亮当前小节
   useEffect(() => {
@@ -328,6 +463,115 @@ export function MarkdownView({ path, file, badge, onToc }) {
             </div>
           )}
           <div ref={mdRef} dangerouslySetInnerHTML={{ __html: file.html }} />
+        </div>
+      </div>
+
+      {zoomedSvg && <MermaidZoomModal svg={zoomedSvg} onClose={() => setZoomedSvg(null)} />}
+    </div>
+  );
+}
+
+// ── Mermaid 放大模态：滚轮缩放 + 拖拽平移 + Esc/遮罩关闭 ─────
+function MermaidZoomModal({ svg, onClose }) {
+  const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
+  const dragRef = useRef(null);
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    // 缩放系数；trackpad(pinch) 走较小 deltaY，鼠标滚轮一次 ±100 左右
+    // 按 deltaMode 区分 + clamp 单次变化，避免鼠标滚轮一下跳太狠
+    const factor = e.deltaMode === 1 ? 0.12 : 0.006; // LINE(1) / PIXEL(0)
+    const raw = -e.deltaY * factor;
+    const step = Math.max(-0.35, Math.min(0.35, raw));
+    setTransform((t) => {
+      const next = Math.min(8, Math.max(0.15, t.scale * (1 + step)));
+      return { ...t, scale: next };
+    });
+  };
+
+  const onMouseDown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: transform.x, baseY: transform.y };
+    const onMove = (ev) => {
+      const d = dragRef.current;
+      if (!d) return;
+      setTransform((t) => ({ ...t, x: d.baseX + (ev.clientX - d.startX), y: d.baseY + (ev.clientY - d.startY) }));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const reset = () => setTransform({ scale: 1, x: 0, y: 0 });
+  const zoomIn = () => setTransform((t) => ({ ...t, scale: Math.min(8, t.scale * 1.6) }));
+  const zoomOut = () => setTransform((t) => ({ ...t, scale: Math.max(0.15, t.scale / 1.6) }));
+
+  const btnStyle = {
+    width: 30, height: 30, border: '1px solid var(--border)', background: 'var(--bg-raised)',
+    color: 'var(--ink)', cursor: 'pointer', borderRadius: 6, fontSize: 14, fontWeight: 600,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  };
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(15, 15, 20, 0.72)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        backdropFilter: 'blur(2px)',
+      }}
+    >
+      <div
+        ref={frameRef}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onDoubleClick={reset}
+        style={{
+          position: 'relative',
+          width: '92vw', height: '88vh',
+          background: 'var(--bg)',
+          borderRadius: 10,
+          border: '1px solid var(--border)',
+          overflow: 'hidden',
+          cursor: dragRef.current ? 'grabbing' : 'grab',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+        }}
+      >
+        <div
+          dangerouslySetInnerHTML={{ __html: svg }}
+          style={{
+            position: 'absolute', top: '50%', left: '50%',
+            transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+            transformOrigin: 'center center',
+            transition: 'none',
+            userSelect: 'none',
+            pointerEvents: 'none',
+          }}
+        />
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6, background: 'var(--bg-tint)', padding: 6, borderRadius: 8, border: '1px solid var(--border)' }}
+        >
+          <button type="button" onClick={zoomOut} title="缩小" style={btnStyle}>−</button>
+          <button type="button" onClick={reset} title="重置 (双击画布亦可)" style={{ ...btnStyle, fontSize: 11, width: 40 }}>1:1</button>
+          <button type="button" onClick={zoomIn} title="放大" style={btnStyle}>+</button>
+          <button type="button" onClick={onClose} title="关闭 (Esc)" style={{ ...btnStyle, color: 'var(--danger)' }}>×</button>
+        </div>
+        <div style={{ position: 'absolute', bottom: 10, left: 12, fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)', pointerEvents: 'none' }}>
+          {Math.round(transform.scale * 100)}%　·　滚轮缩放 · 拖拽平移 · 双击还原 · Esc 关闭
         </div>
       </div>
     </div>

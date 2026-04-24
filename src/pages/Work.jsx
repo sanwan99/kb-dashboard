@@ -6,7 +6,7 @@ import CollapsibleSection from '../components/CollapsibleSection.jsx';
 import RecentList from '../components/RecentList.jsx';
 import useRememberedPath from '../lib/useRememberedPath.js';
 import useRecentFiles from '../lib/useRecentFiles.js';
-import { getTree, getFile, subscribeFileEvents } from '../lib/api.js';
+import { getTree, getFile, getRecent, subscribeFileEvents } from '../lib/api.js';
 
 const SOURCE = 'work';
 const MD_EXTS = new Set(['md', 'markdown']);
@@ -234,26 +234,31 @@ function Sidebar({
 }
 
 // ── 右栏：全部活跃任务 ──────────────────────────────────
-function flattenActive(activeTasks) {
-  const all = Object.entries(activeTasks).flatMap(([proj, list]) =>
-    list.map((f) => ({ proj, ...f })),
-  );
-  all.sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
-  return all;
+function formatRelTime(iso) {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const diff = Date.now() - t;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return '刚刚';
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d} 天前`;
+  return new Date(iso).toLocaleDateString('zh-CN');
 }
 
-function ActiveTasksBody({ activeTasks, selectedPath, onSelect }) {
-  const all = flattenActive(activeTasks);
-  if (all.length === 0) {
-    return (
-      <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>
-        所有项目都没有 md/codex/current/ 目录
-      </div>
-    );
+function RecentModsBody({ items, selectedPath, onSelect }) {
+  if (!items) {
+    return <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>加载中…</div>;
+  }
+  if (items.length === 0) {
+    return <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>公司笔记仓里暂无 md 文件</div>;
   }
   return (
     <div style={{ padding: '4px 12px 0' }}>
-      {all.map((t) => {
+      {items.map((t) => {
+        const proj = t.path.split('/')[0] || '';
         const active = selectedPath === t.path;
         return (
           <div
@@ -267,18 +272,33 @@ function ActiveTasksBody({ activeTasks, selectedPath, onSelect }) {
               borderWidth: active ? 1.5 : 1,
               background: active ? 'var(--bg-raised)' : 'transparent',
             }}
+            title={t.path}
             onClick={() => onSelect(t.path)}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
               <span className="src-dot work" />
-              <span className="kb-mono" style={{ fontSize: 10.5, color: 'var(--src-work)', fontWeight: 600 }}>
-                {t.proj}
+              <span
+                className="kb-mono"
+                style={{
+                  fontSize: 10.5, color: 'var(--src-work)', fontWeight: 600,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%',
+                }}
+              >
+                {proj}
               </span>
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-muted)' }}>
-                {new Date(t.mtime).toLocaleDateString('zh-CN')}
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>
+                {formatRelTime(t.mtime)}
               </span>
             </div>
-            <div className="kb-mono" style={{ fontSize: 11.5, color: 'var(--ink)' }}>{t.name}</div>
+            <div
+              className="kb-mono"
+              style={{
+                fontSize: 11.5, color: 'var(--ink)',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}
+            >
+              {t.name}
+            </div>
           </div>
         );
       })}
@@ -300,7 +320,26 @@ export default function Work() {
   const [initError, setInitError] = useState(null);
   const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
   const [recent] = useRecentFiles('kb-recent-work', selectedPath);
-  const activeCount = Object.values(activeTasks).reduce((sum, list) => sum + list.length, 0);
+  const [recentMods, setRecentMods] = useState(null);
+
+  // 活跃修改：全 work 源按 mtime 倒序 top 50
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      getRecent(SOURCE, 50)
+        .then((r) => { if (!cancelled) setRecentMods(r.items || []); })
+        .catch(() => { if (!cancelled) setRecentMods([]); });
+    };
+    load();
+    // 订阅文件变更 → 重拉（debounce 简易：1.5s 合并）
+    let t = null;
+    const unsub = subscribeFileEvents((evt) => {
+      if (evt.source !== SOURCE) return;
+      clearTimeout(t);
+      t = setTimeout(load, 1500);
+    });
+    return () => { cancelled = true; unsub(); clearTimeout(t); };
+  }, []);
 
   // 初始化：项目列表 + 并发拉每个项目的 codex/current
   useEffect(() => {
@@ -497,14 +536,14 @@ export default function Work() {
               />
             </CollapsibleSection>
             <CollapsibleSection
-              storageKey="kb-section-work-active"
-              title="活跃任务"
-              icon="flag"
+              storageKey="kb-section-work-recent-mods"
+              title="活跃修改"
+              icon="clock"
               accent="var(--src-work)"
-              badge={activeCount || null}
+              badge={recentMods ? recentMods.length : null}
             >
-              <ActiveTasksBody
-                activeTasks={activeTasks}
+              <RecentModsBody
+                items={recentMods}
                 selectedPath={selectedPath}
                 onSelect={setSelectedPath}
               />

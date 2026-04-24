@@ -41,6 +41,10 @@ export function getHomeOverview() {
   return request('/api/home/overview');
 }
 
+export function getRecent(source, limit = 50) {
+  return request(`/api/recent?source=${encodeURIComponent(source)}&limit=${limit}`);
+}
+
 export function search(q, { sources = [], limit = 60 } = {}) {
   const qs = new URLSearchParams({ q });
   if (sources.length) qs.set('source', sources.join(','));

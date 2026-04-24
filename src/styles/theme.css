@@ -278,6 +278,29 @@ html, body, #root {
   display: block;
 }
 
+/* 代码块复制按钮：hover 出现，点击后 1.5s 反馈 */
+.md pre { position: relative; }
+.md pre .md-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--bg-tint);
+  color: var(--ink-sub);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.md pre:hover .md-copy-btn,
+.md pre .md-copy-btn:focus-visible { opacity: 1; }
+.md pre .md-copy-btn:hover { background: var(--bg-raised); color: var(--ink); }
+.md pre .md-copy-btn.copied { color: var(--ok); border-color: #CFE3D6; background: #E8F1EB; opacity: 1; }
+
 /* Mermaid 渲染容器 */
 .md .md-mermaid {
   margin: 10px 0 14px;

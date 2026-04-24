@@ -40,6 +40,18 @@ async function scanMd(sourceId) {
 const latest = (files) =>
   files.length ? new Date(Math.max(...files.map((f) => f.mtime.getTime()))).toISOString() : null;
 
+// 某源下最近修改的 md 文件，按 mtime 倒序
+export async function listRecent(source, limit = 50) {
+  const files = await scanMd(source);
+  files.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+  return files.slice(0, limit).map((f) => ({
+    name: f.name,
+    path: f.path,
+    size: f.size,
+    mtime: f.mtime.toISOString(),
+  }));
+}
+
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Obsidian：按 PARA 顶层目录分组
