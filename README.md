@@ -1,187 +1,184 @@
-# 个人知识库看板 · kb-dashboard
+# kb-dashboard · 个人知识库看板
 
-三源聚合的本地 Markdown 看板：**学习项目** / **Obsidian 知识库** / **公司项目笔记**。
+本地 Markdown 三源聚合看板：**学习项目** / **Obsidian 知识库** / **公司项目笔记**。Electron 包装成桌面 App。
 
-## 当前状态：v1.0 — 完整可用
+![screenshot](screenshots/canvas-current.jpg)
 
-- 前端：Vite 5 + React 18 + React Router 6
-- 后端：Fastify 5 @ 127.0.0.1:5174，9 个端点
-- **6 个页面全接真实数据**（含 Search 全文 / Obsidian 反链）
-- 搜索：**minisearch 索引 794 篇 md**，中英混合分词，结果点击直接跳到对应页打开文件
-- Obsidian：反向链接面板 + 标签面板（vault 级索引）
-- 一键启动：`./start.sh`（自动建软链 / 装依赖 / 起前后端）
+## 特性
+
+- **三源聚合浏览**：学习项目 / Obsidian vault / 公司笔记各自保留视觉语言（蓝 / 紫 / 橙）
+- **跨源浮层搜索**：⌘K 呼出，minisearch 索引 ~800 篇 md，中英混合分词，结果点击直接跳文件
+- **Obsidian 专项**：反向链接面板 + 标签统计 + 局部图谱（入链/出链径向布局）
+- **学习状态一眼看到**：解析 `progress.md` 头部表格 + 当前断点 + 打卡串联（streak + 30 天热图）
+- **公司项目活跃任务**：扫所有 `<project>/md/codex/current/*.md` 聚合到右栏
+- **Markdown 阅读增强**：代码高亮（`highlight.js`）+ Mermaid 懒加载 + 图片嵌入（`![[image.png]]`）+ 右侧 TOC（滚动高亮）
+- **文件热更新**：chokidar 监听三源 → SSE 推送，改了 md 无需手动刷新
+- **深色主题**：light / dark / system 三档，跟随系统配色切换
+- **智能链接跳转**：5 档识别（http/锚点/绝对源路径/相对 md/镜像仓库路径）
+- **Electron 打包**：单进程内置 Fastify + `asar + asarUnpack`，产出 `.app` 可直接启动
 
 ## 启动
 
-最快：
+### 开发模式
+
 ```bash
-cd /Users/fanhaolin/work/sanwan/kb-dashboard
-./start.sh       # 自动软链 + npm install + npm run dev
+cd kb-dashboard
+./start.sh       # 自动建软链 + npm install + 起前后端
 ```
 
-手动：
+或手动：
+
 ```bash
-npm install      # 首次
-npm run dev      # 同时起前后端
+npm install
+npm run dev      # 5173 前端 + 5174 后端
+# 或
+npm run app      # 顺带起 Electron 窗口
 ```
 
-- **前端** http://localhost:5173 （Vite + HMR）
-- **后端** http://127.0.0.1:5174 （Fastify，`node --watch` 自动重启）
-- 前端 `/api/*` 请求由 Vite proxy 转到后端
+访问 http://localhost:5173 或等 Electron 窗口弹出。
 
-命令：
-- `npm run dev` — 并发启动前后端（concurrently）
-- `npm run dev:api` — 只跑后端
-- `npm run dev:web` — 只跑前端
-- `npm run build` — 前端生产构建到 `dist/`
-- `npm run preview` — 预览生产构建
-- `npm run preview-design` — 5180 端口看归档的原始设计稿（`design-preview/`）
+### 打包成桌面 App
+
+```bash
+npm run dist
+```
+
+产出在 `release/mac-arm64/kb-dashboard.app`，双击即可（首次右键"打开"绕 Gatekeeper）。可以 `cp -R release/mac-arm64/kb-dashboard.app /Applications/` 挪进应用。
+
+## 三源软链设置
+
+首次在新机器上运行，`./start.sh` 会自动按默认路径建软链：
+
+```
+data/learn    → ~/Desktop/文档/个人学习项目
+data/obsidian → ~/Desktop/文档/个人知识库
+data/work     → ~/work/code/sanwan/notes
+```
+
+如果你的真实路径不同，手动改 `start.sh` 里的三个 `_TARGET` 变量。
+
+## 命令一览
+
+| 命令 | 做什么 |
+|---|---|
+| `./start.sh` | 推荐。检查软链 → install → dev |
+| `npm run dev` | 并发起前后端 |
+| `npm run dev:api` | 只跑后端（5174） |
+| `npm run dev:web` | 只跑前端（5173） |
+| `npm run app` | 前后端 + Electron 窗口 |
+| `npm run build` | 前端构建到 `dist/` |
+| `npm run dist` | 前端 build + electron-builder 打 `.app` 到 `release/` |
+| `npm run preview` | 预览 `dist/` |
+| `npm run preview-design` | 5180 端口看原始 Claude design 设计稿 |
 
 ## 路由
 
-| 路径 | 页面 | 状态 |
+| 路径 | 页面 | 说明 |
 |---|---|---|
-| `/` | 首页（上下三段） | ✅ 已迁 |
-| `/learn` | 学习项目（呼吸感） | ✅ 已迁 |
-| `/obsidian` | Obsidian 浏览 | ✅ 已迁 |
-| `/work` | 公司笔记 | ✅ 已迁 |
-| `/search` | 全局搜索 | ✅ 已迁 |
-| `/prefs` | 首选项 | ✅ 已迁 |
+| `/` | Home | 三源卡片墙 · 顶部问候 · 学习断点 · Obsidian 常用目录 · 公司项目活跃度 |
+| `/learn` | 学习项目 | 阶段进度（可折叠）· knowledge/review 切换 · 打卡热图 |
+| `/obsidian` | Obsidian | PARA 树 · Markdown · 反链 · 标签 · 局部图谱 |
+| `/work` | 公司笔记 | 项目列表 · `md/codex/current/` 高亮 · 跨项目活跃任务聚合 |
+| `/search` | 搜索详情 | 完整搜索结果页（⌘K 浮层看不过来的时候进这里） |
+| `/prefs` | 首选项 | 源开关 · 主题 · 密度 · 字号 · 行为开关 · 快捷键 |
 
-## 目录
+## 当前状态
 
-```
-kb-dashboard/
-├── index.html              # Vite 入口
-├── vite.config.js          # React + /api proxy → :5174
-├── package.json
-├── data/                   # 🔗 三个源的软链（只读）
-│   ├── learn     → /Users/fanhaolin/Desktop/文档/个人学习项目
-│   ├── obsidian  → /Users/fanhaolin/Desktop/文档/个人知识库
-│   └── work      → /Users/fanhaolin/work/code/sanwan/notes
-├── server/                 # 后端（Fastify）
-│   ├── index.js                # 入口 + 3 个路由
-│   └── lib/
-│       ├── sources.js          # 源表 + safeResolve 路径穿透防护
-│       ├── tree.js             # 单级目录列表 + 忽略规则
-│       └── markdown.js         # marked + gray-matter + wikilink/embed 占位渲染
-├── src/
-│   ├── main.jsx            # React 根 + Router
-│   ├── App.jsx             # 路由表
-│   ├── components/
-│   │   └── primitives.jsx  # Icon / Frame / TopBar / SourcePill / SectionHeader / VaultCard / MOCK
-│   ├── pages/
-│   │   ├── Home.jsx            # 首页（上下三段）
-│   │   ├── LearnSpacious.jsx   # 学习项目（呼吸感）
-│   │   ├── Obsidian.jsx        # PARA 树 + Markdown + 反链 + 局部图谱
-│   │   ├── Work.jsx            # 公司笔记（codex/current 高亮）
-│   │   ├── Search.jsx          # 跨源全文搜索
-│   │   └── Prefs.jsx           # 首选项 / 组件清单 / 技术栈
-│   ├── styles/
-│   │   └── theme.css       # Claude 风主题
-│   └── lib/
-│       └── api.js          # /api/* 薄客户端：getSources / getTree / getFile
-├── design-preview/         # 📦 归档：原 Claude design 产出的静态稿
-│   ├── index.html          # 画板展示器（CDN + Babel standalone）
-│   ├── design-canvas.jsx
-│   ├── pages/*.jsx         # 9 个页面变体（含未选中的 3 个首页和 1 个紧凑学习页）
-│   ├── components/primitives.jsx
-│   └── styles/theme.css
-├── screenshots/
-└── uploads/
-```
-
-## API 端点
-
-| 端点 | 返回 |
+| 功能 | 状态 |
 |---|---|
-| `GET /api/health` | `{ ok, sources, search }` |
-| `GET /api/sources` | 三源元信息（id/label/color/root/exists） |
-| `GET /api/tree?source=xx&path=xx` | 单级目录列表，dir 在前 + 名字排序 |
-| `GET /api/file?source=xx&path=xx` | md → frontmatter + 渲染 HTML + raw |
-| `GET /api/learn/progress` | 解析 `progress.md` → 阶段表格 + 当前断点 + 进度百分比 |
-| `GET /api/home/overview` | 首页聚合：三源 md 总数 / 近 7 天编辑数 / PARA 分组 / 项目分组 |
-| `GET /api/search?q=...&source=...&limit=N` | minisearch 全文检索，按源分组 + 高亮 snippet |
-| `GET /api/search/stats` | `{ ready, docCount, lastBuilt }` |
-| `GET /api/obsidian/backlinks?path=...` | 谁引用了这篇笔记（`[[wikilink]]` 反向索引） |
-| `GET /api/obsidian/tags` | vault 全部 `#tag` 及使用频次 |
-| `GET /api/obsidian/stats` | `{ ready, fileCount, tagCount, backlinkTargets, lastBuilt }` |
+| 三源目录浏览 + Markdown 渲染 | ✅ |
+| 跨源全文搜索（浮层 + 详情页） | ✅ |
+| Obsidian 反链 / 标签 / 局部图谱 | ✅ |
+| 学习 progress 解析 + 打卡热图 | ✅ |
+| 公司笔记活跃任务聚合 | ✅ |
+| 代码高亮 + Mermaid + 图片嵌入 | ✅ |
+| 深色主题 + TOC + 文件树过滤 | ✅ |
+| Prefs 真配置持久化 | ✅ |
+| 文件热更新（SSE） | ✅ |
+| 跨页后退（URL 即状态） | ✅ |
+| Electron `.app` 打包 | ✅ |
+| `.dmg` / 代码签名 | ⬜ 需 Apple Developer ID |
+| 前端 `wikilink` 真跳转 | ⬜ 当前还是展示态（后端反链已有） |
+| 图片 lightbox 放大 | ⬜ |
 
-安全保障：
-- `safeResolve` 在 `source.root` 基础上 resolve，非 root 内路径返回 400
-- 忽略目录：`.git`/`.DS_Store`/`node_modules`/`target`/`dist`/`.vite`/`.claude`/`.codex_tmp`/`.obsidian`/`.trash`/`*_副本`
-- 纯只读，无任何 POST/PUT/DELETE
+## 未来待办
+
+- [ ] `wikilink` onClick 跳转（vault 文件名索引已有，前端挂 handler 即可）
+- [ ] 图片 lightbox：点 `![[image.png]]` 后铺满背景放大
+- [ ] `.dmg` 签名版：申请 Apple Developer ID（$99/年）→ 配 `identity` → 正常打包不再需要右键"打开"
+- [ ] Prefs "启动时恢复上次打开的文件" 真落地（目前只保存状态）
+- [ ] 搜索高级过滤：按 tag / 时间窗 / 文件类型
+- [ ] 学习页五阶段进度条横向展开时适应窗口宽度（现在窄屏文字挤）
 
 ## 改动记录
 
-**v1.0（本次）：搜索 + 反链 + 收尾**
-- 全文搜索：`server/lib/search.js` 基于 minisearch，**794 篇 md 索引就绪**
-  - 中英混合分词（英文按词前缀 + 模糊，中文按字 AND）
-  - 启动时后台构建，不阻塞 listen
-  - `Search.jsx` 改为受控 input + 180ms debounce + 3 源过滤 checkbox + 按源分组结果
-  - 结果条目点击 → 跳到对应页（`/obsidian?path=...` 等），Obsidian/Work/Learn 读 `useSearchParams` 自动展开并选中文件
-- Obsidian 反链/标签：`server/lib/obsidian-index.js` 扫 `[[wikilink]]` + `#tag`，两遍扫描（文件名索引 + wikilink/tag 提取）
-  - 代码块内不算 tag；严格 tag 正则排除 `##heading` 和纯数字
-  - 右栏 `BacklinksPanel` 实时显示当前文件的反链，可点击跳转
-  - 左栏底部 tag 栏（0 个时显示"vault 以 PARA 目录组织"兜底）
-- 收尾：`start.sh` 一键启动（自动建软链 + install + dev）；`.gitignore` 排除 `data/` 下三个软链
+**v1.4 — Electron 打包实际可用 + 链接智能跳转**
+- `npm run dist` 真正产出可双击的 `.app`
+- 修了一串连环坑：Vite `base: './'`（file:// 下绝对路径 404）/ `directories.output: 'release'`（和 vite dist 分离）/ `asarUnpack` server + 核心 node_modules（ESM 加载器在 asar 内有兼容问题）/ preload 注入 `window.__KB_API_BASE__`
+- `will-navigate` 兜底：非本地 URL 全走 `shell.openExternal`，file:// 跳转一律阻止，再不白屏
+- Markdown 链接接管（`processLinks`）：5 档识别 — http / 锚点 / 绝对源路径 / 相对 md / **镜像仓库兜底**（`/<project>/md/codex/...` 自动映射到 work 源）
 
-**v0.5：四页全接真实数据**
-- 新端点：`/api/learn/progress`（progress.md 结构化解析）、`/api/home/overview`（首页聚合）
-- 新模块：`server/lib/learn.js`（表格/阶段正则解析）、`server/lib/stats.js`（fast-glob 递归扫描 + PARA/项目分组）
-- 抽共享组件 `src/components/ReaderPanel.jsx`（MarkdownView / Empty / Loading / Error）
-- Home / Obsidian / Work / LearnSpacious 全部消费真实 API 数据
-- Home 所有卡片变成 `<Link>`，点击即路由到对应页
+**v1.3 — Prefs 真配置 + 学习打卡 + Obsidian 图谱 + 分包 + 跨页后退**
+- `useTheme` / `usePrefs` 用 `useSyncExternalStore` 共享状态，所有组件即时同步
+- Prefs 页：主题 3 档 / 密度 3 档 / 字号滑块 / 4 项行为开关 / 源开关 / 键盘快捷键 / 诊断重置
+- 学习打卡：`parseProgress` 扫 `### YYYY-MM-DD` 记录 → streak + 30 天热图
+- Obsidian 局部图谱：径向 SVG（入链紫 / 出链蓝 / 双向橙），点击跳转
+- Vite `manualChunks`：拆 React / hljs 独立，主 bundle 从 1.18MB 砍到 ~76KB
+- `selectedPath` 改成 `useSearchParams`，浏览器前进后退能恢复选中文件
 
-**v0.4：后端骨架就绪**
-- Fastify + CORS + `node --watch` 热重启
-- `data/` 下建三个软链，`safeResolve` 防路径穿透
+**v1.2 — 文件热更新 + 代码高亮 + Mermaid + 图片嵌入**
+- `chokidar` 监听三源 → `/api/events` SSE 广播 → 前端自动重拉当前文件
+- 5s 防抖批量重建搜索 + Obsidian 索引
+- `highlight.js` 代码块高亮 + 自定义 Claude 风暗底
+- `mermaid` 动态 `import()`（~600KB 懒加载）
+- `/api/blob` 二进制代理，`![[image.png]]` 真实显示
+
+**v1.1 — 深色主题 + Markdown TOC + 文件树过滤**
+- CSS 变量 + `[data-theme="dark"]` 覆盖 17 个变量
+- MarkdownView 扫 h2/h3 自动加 id，右侧 sticky TOC，滚动高亮
+- Obsidian / Work / Learn 侧栏顶部加过滤 input
+
+**v1.0 — 搜索 + Obsidian 反链/标签 + 一键启动**
+- minisearch 索引 ~800 篇 md，中英混合分词（英文前缀+模糊，中文按字 AND）
+- ⌘K 浮层搜索（debounce + 键盘导航 + 按源分组）
+- `server/lib/obsidian-index.js` 扫 `[[wikilink]]` + `#tag`，严格正则排除 `##heading`
+- 反链面板 + 标签面板接入前端
+- `start.sh` 一键启动；`.gitignore` 排除 `data/` 软链
+
+**v0.5 — 四页全接真实数据**
+- `/api/learn/progress`：progress.md 阶段表格 + 断点段结构化解析
+- `/api/home/overview`：fast-glob 递归扫三源 + PARA/项目分组
+- 抽共享 `ReaderPanel.jsx`（MarkdownView / Empty / Loading / Error）
+- Home / Obsidian / Work / LearnSpacious 全部消费真 API
+- Home 所有卡片 `<Link>` 化
+
+**v0.4 — 后端骨架就绪**
+- Fastify + CORS + `node --watch`
+- `data/` 下三个软链 + `safeResolve` 路径穿透防护
 - 核心端点：`/api/sources` `/api/tree` `/api/file` `/api/health`
-- Markdown 渲染：`marked` + `gray-matter` + wikilink/embed 占位
+- `marked` + `gray-matter` + wikilink/embed 占位
 - Vite `/api` proxy → :5174
-- `npm run dev` 用 `concurrently` 同起前后端
-- `src/lib/api.js` 薄客户端就位，下一步给 page 接
 
-**v0.3：剩余 4 页迁移**
-- `Obsidian.jsx` / `Work.jsx` / `Search.jsx` / `Prefs.jsx` 全部从 `design-preview/` 迁入
-- 删除 `Stub.jsx` 占位
-- 路由表 6 条全部接真页面，build 通过（41 modules, 300ms）
+**v0.3 — 剩余 4 页迁移**
+- Obsidian / Work / Search / Prefs 从 `design-preview/` 全迁入
+- 删除 Stub 占位，路由 6 条全真
 
-**v0.2：工程化改造**
-- 脚手架：Vite + React 18 + React Router 6
-- 原 `pages/` `components/` `styles/` `design-canvas.jsx` `index.html` 全部搬入 `design-preview/` 归档
-- `primitives.jsx` 改造：
-  - 去掉 `window` 挂载，全部 `export`
-  - TopBar 改用 `NavLink`，active 态由 URL 自动判定
-- 页面迁移：`home.jsx` → `src/pages/Home.jsx`，`learn-spacious.jsx` → `src/pages/LearnSpacious.jsx`
-- 其他 4 页 Stub 占位
+**v0.2 — 工程化改造**
+- Vite 5 + React 18 + React Router 6 脚手架
+- 原静态稿全部搬入 `design-preview/` 归档
+- `primitives.jsx` 改 ES module，TopBar 接 NavLink
+- 两页先行：Home（上下三段） + LearnSpacious（呼吸感版）
 
-**v0.1（已归档）：静态设计稿**
-- 保留在 `design-preview/` 下，`npm run preview-design` 能看
+**v0.1 — 静态设计稿**
+- Claude design 产出 9 个页面变体，`design-preview/` 归档，`npm run preview-design` 能看
 
-## 未来可选增强
+## 只读保证
 
-- [ ] WebSocket `/api/changes` + chokidar 监听文件变更热更新（现在改了文件要刷新页面）
-- [ ] `/api/blob?source=...&path=...` 图片等二进制代理（Obsidian 内图片引用）
-- [ ] Prefs 页接真实 settings.json 读写
-- [ ] 学习页打卡串联：扫 `md/codex/ledger/` 统计连续天数
-- [ ] Obsidian 局部图谱可视化（现已有反链边，可以画 force-directed graph）
+前端不做任何写操作。后端只做：目录扫描、文件读取、SSE 推送。全局规则要求禁止在公司项目下对 `md/` 跑 git —— 这条由后端白名单保证（无任何写路由）。
 
-起一个超轻 Node 后端扫三个源，mock 换真数据：
+## 维护者提示
 
-```
-/Users/fanhaolin/Desktop/文档/个人学习项目/     # 源 A：学习项目
-/Users/fanhaolin/Desktop/文档/个人知识库/         # 源 B：Obsidian（PARA）
-/Users/fanhaolin/work/code/sanwan/notes/         # 源 C：公司外挂笔记仓
-```
-
-推荐栈：
-- 后端：Fastify + `chokidar` 监听 + `gray-matter` 解析 frontmatter
-- Markdown：`react-markdown` + `remark-gfm` + `rehype-highlight` + mermaid
-- Obsidian 专项：自写 `[[wikilink]]` / `![[embed]]` remark 插件 + vault 级文件名索引 + 反向链接表
-- 搜索：前期 `lunr`，量大换 `orama`
-
-### 只读保证
-
-前端不做任何写操作。后端只做：目录扫描、文件读取、`git log` 最近 commit 只读展示。
-全局规则要求禁止在公司项目下对 `md/` 跑 git —— 这条由后端白名单保证。
+- 改代码前读 [CLAUDE.md](./CLAUDE.md) —— 有踩过的坑和硬约束
+- 三源软链是每台机各自建的，不入 git；新机器跑 `./start.sh` 会自动建
+- 搜索 / Obsidian 索引启动时后台建（不阻塞 listen）；改了扫描逻辑要 **重启后端** 才能重建
+- 改 md 不用重启后端，chokidar + SSE 自动推送
