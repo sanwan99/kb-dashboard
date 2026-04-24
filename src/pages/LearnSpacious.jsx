@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import useRememberedPath from '../lib/useRememberedPath.js';
+import useRecentFiles from '../lib/useRecentFiles.js';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
-import { EmptyState, LoadingState, ErrorState, MarkdownView } from '../components/ReaderPanel.jsx';
+import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
+import SidePanel from '../components/SidePanel.jsx';
+import CollapsibleSection from '../components/CollapsibleSection.jsx';
+import RecentList from '../components/RecentList.jsx';
 import { getTree, getFile, getLearnProgress, subscribeFileEvents } from '../lib/api.js';
 import { usePrefs } from '../lib/usePrefs.js';
 
@@ -352,83 +356,66 @@ function Sidebar({
   );
 }
 
-// ── 右栏 ───────────────────────────────────────────────
-function RightPanel({ progress }) {
+// ── 右栏内容 body（供 CollapsibleSection 嵌入） ─────────
+function ProgressMetaBody({ progress }) {
+  if (!progress) return <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>加载中…</div>;
   return (
-    <div
-      style={{
-        width: 280,
-        background: 'var(--bg-tint)',
-        borderLeft: '1px solid var(--border)',
-        padding: 16,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-          progress.md 元信息
+    <div style={{ padding: '4px 12px 0' }}>
+      <div className="kb-card" style={{ padding: 12 }}>
+        <div className="kb-mono" style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 4 }}>
+          {progress.path}
         </div>
-        {progress ? (
-          <div className="kb-card" style={{ padding: 12 }}>
-            <div className="kb-mono" style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 4 }}>
-              {progress.path}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink-sub)', lineHeight: 1.55 }}>
-              {progress.totalStages} 阶段 · 完成 {progress.doneStages}
-              <br />
-              当前 <b style={{ color: 'var(--src-learn)' }}>阶段 {progress.currentIndex ?? '?'}</b>
-              <br />
-              最近更新 {new Date(progress.mtime).toLocaleDateString('zh-CN')}
-              <br />
-              <span style={{ color: 'var(--ink-muted)' }}>{(progress.size / 1024).toFixed(1)} KB</span>
-            </div>
-          </div>
-        ) : (
-          <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>加载中…</div>
-        )}
+        <div style={{ fontSize: 12, color: 'var(--ink-sub)', lineHeight: 1.55 }}>
+          {progress.totalStages} 阶段 · 完成 {progress.doneStages}
+          <br />
+          当前 <b style={{ color: 'var(--src-learn)' }}>阶段 {progress.currentIndex ?? '?'}</b>
+          <br />
+          最近更新 {new Date(progress.mtime).toLocaleDateString('zh-CN')}
+          <br />
+          <span style={{ color: 'var(--ink-muted)' }}>{(progress.size / 1024).toFixed(1)} KB</span>
+        </div>
       </div>
+    </div>
+  );
+}
 
-      <div>
-        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-          连续打卡
+function StreakBody({ progress }) {
+  return (
+    <div style={{ padding: '4px 12px 0' }}>
+      <div className="kb-card" style={{ padding: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
+          <span className="kb-serif" style={{ fontSize: 28, fontWeight: 600, color: 'var(--ink)' }}>
+            {progress?.streak ?? 0}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--ink-sub)' }}>天连续</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>
+            累计 {progress?.activityDates?.length ?? 0}
+          </span>
         </div>
-        <div className="kb-card" style={{ padding: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
-            <span className="kb-serif" style={{ fontSize: 28, fontWeight: 600, color: 'var(--ink)' }}>
-              {progress?.streak ?? 0}
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--ink-sub)' }}>天连续</span>
-            <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>
-              累计 {progress?.activityDates?.length ?? 0}
-            </span>
-          </div>
-          {progress?.recent30 ? (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(15, 1fr)', gap: 2 }}>
-                {progress.recent30.map((d) => (
-                  <div
-                    key={d.date}
-                    title={`${d.date} · ${d.active ? '有记录' : '无'}`}
-                    style={{
-                      aspectRatio: '1',
-                      borderRadius: 2,
-                      background: d.active ? 'var(--src-learn)' : 'var(--bg-sunk)',
-                      border: '1px solid var(--border)',
-                    }}
-                  />
-                ))}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-muted)', marginTop: 4 }}>
-                <span>30 天前</span>
-                <span>今天</span>
-              </div>
-            </>
-          ) : (
-            <div className="kb-mono" style={{ fontSize: 10.5, color: 'var(--ink-muted)' }}>加载中…</div>
-          )}
-        </div>
+        {progress?.recent30 ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(15, 1fr)', gap: 2 }}>
+              {progress.recent30.map((d) => (
+                <div
+                  key={d.date}
+                  title={`${d.date} · ${d.active ? '有记录' : '无'}`}
+                  style={{
+                    aspectRatio: '1',
+                    borderRadius: 2,
+                    background: d.active ? 'var(--src-learn)' : 'var(--bg-sunk)',
+                    border: '1px solid var(--border)',
+                  }}
+                />
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-muted)', marginTop: 4 }}>
+              <span>30 天前</span>
+              <span>今天</span>
+            </div>
+          </>
+        ) : (
+          <div className="kb-mono" style={{ fontSize: 10.5, color: 'var(--ink-muted)' }}>加载中…</div>
+        )}
       </div>
     </div>
   );
@@ -445,12 +432,12 @@ export default function LearnSpacious() {
   const [selectedTopic, setSelectedTopic] = useState(null);
   const [topicFiles, setTopicFiles] = useState(null);
 
-  const [sp, setSp] = useSearchParams();
-  const selectedPath = sp.get('path') || null;
-  const setSelectedPath = (p) => setSp(p ? { path: p } : {});
+  const [selectedPath, setSelectedPath] = useRememberedPath('kb-last-path-learn');
   const [file, setFile] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState(null);
+  const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
+  const [recent] = useRecentFiles('kb-recent-learn', selectedPath);
 
   // 折叠顶部的阶段/断点卡片（持久化到 localStorage；首次默认值走 Prefs）
   const prefs = usePrefs();
@@ -590,14 +577,62 @@ export default function LearnSpacious() {
             ) : fileError ? (
               <ErrorState msg={`无法加载文件：${fileError}`} />
             ) : file ? (
-              <MarkdownView path={selectedPath} file={file} />
+              <MarkdownView path={selectedPath} file={file} onToc={setTocState} />
             ) : (
               <LoadingState />
             )}
           </div>
         </div>
 
-        <RightPanel progress={progress} />
+        <SidePanel storageKey="learn-right" defaultWidth={300}>
+          <div className="kb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <CollapsibleSection
+              storageKey="kb-section-learn-toc"
+              title="目录"
+              icon="list"
+              accent="var(--src-learn)"
+              badge={tocState.toc.length || null}
+            >
+              <TocList
+                toc={tocState.toc}
+                activeId={tocState.activeId}
+                onJump={tocState.jumpTo}
+                accentColor="var(--src-learn)"
+              />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-learn-recent"
+              title="最近打开"
+              icon="clock"
+              accent="var(--src-learn)"
+              badge={recent.length || null}
+            >
+              <RecentList
+                recent={recent}
+                currentPath={selectedPath}
+                onSelect={setSelectedPath}
+                accent="var(--src-learn)"
+              />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-learn-progress"
+              title="progress.md 元信息"
+              icon="file"
+              accent="var(--src-learn)"
+            >
+              <ProgressMetaBody progress={progress} />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-learn-streak"
+              title="连续打卡"
+              icon="sparkle"
+              accent="var(--src-learn)"
+              badge={progress?.streak ?? null}
+            >
+              <StreakBody progress={progress} />
+            </CollapsibleSection>
+          </div>
+        </SidePanel>
       </div>
     </Frame>
   );

@@ -202,8 +202,9 @@ async function enhanceRendered(container, { renderMermaid = true } = {}) {
  *   path    — 相对 source 的路径
  *   file    — /api/file 返回体 { html, meta, size, mtime, ... }
  *   badge   — 可选 ReactNode，显示在面包屑末尾（例如 "活跃任务"）
+ *   onToc   — 可选回调，当目录变化时报告 { toc, activeId, jumpTo }，页面可把 TOC 放到自己的右栏
  */
-export function MarkdownView({ path, file, badge }) {
+export function MarkdownView({ path, file, badge, onToc }) {
   const mdRef = useRef(null);
   const scrollRef = useRef(null);
   const [toc, setToc] = useState([]);
@@ -215,6 +216,7 @@ export function MarkdownView({ path, file, badge }) {
   useEffect(() => {
     getCachedSources().then(setSources).catch(() => setSources([]));
   }, []);
+
   const segments = path.split('/');
   const dirParts = segments.slice(0, -1);
   const fileName = segments[segments.length - 1];
@@ -267,10 +269,23 @@ export function MarkdownView({ path, file, badge }) {
     return () => container.removeEventListener('scroll', onScroll);
   }, [toc]);
 
-  const jumpTo = (id) => {
+  const jumpTo = React.useCallback((id) => {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  }, []);
+
+  // 把 TOC 数据暴露给外部（页面把它渲染到自己的右栏）
+  useEffect(() => {
+    if (typeof onToc !== 'function') return;
+    onToc({ toc, activeId, jumpTo });
+  }, [toc, activeId, jumpTo, onToc]);
+
+  // 页面卸载 / 切换文件时，通知外部清空
+  useEffect(() => {
+    return () => {
+      if (typeof onToc === 'function') onToc({ toc: [], activeId: null, jumpTo });
+    };
+  }, [onToc, jumpTo]);
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: 'var(--bg)' }}>
@@ -300,76 +315,69 @@ export function MarkdownView({ path, file, badge }) {
         </span>
       </div>
 
-      <div ref={scrollRef} className="kb-scroll" style={{ flex: 1, padding: '32px 40px 40px' }}>
-        <div style={{ display: 'flex', gap: 36, maxWidth: 1040, margin: '0 auto', alignItems: 'flex-start' }}>
-          <div className="md" style={{ flex: 1, minWidth: 0, maxWidth: 720 }}>
-            <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6 }}>{path}</div>
-            {file.meta && file.meta.tags && (
-              <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-                {(Array.isArray(file.meta.tags) ? file.meta.tags : [file.meta.tags]).map((t) => (
-                  <span key={t} className="kb-mono" style={{ fontSize: 10.5, color: 'var(--src-obsidian)', background: 'var(--src-obsidian-bg)', padding: '2px 8px', borderRadius: 3 }}>
-                    #{t}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div ref={mdRef} dangerouslySetInnerHTML={{ __html: file.html }} />
-          </div>
-
-          {toc.length > 1 && (
-            <aside
-              style={{
-                width: 180,
-                flexShrink: 0,
-                position: 'sticky',
-                top: 0,
-                alignSelf: 'flex-start',
-                maxHeight: 'calc(100vh - 150px)',
-                overflowY: 'auto',
-                fontSize: 12,
-                lineHeight: 1.6,
-              }}
-            >
-              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, paddingLeft: 10 }}>
-                目录
-              </div>
-              <ol style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {toc.map((it) => {
-                  const active = activeId === it.id;
-                  return (
-                    <li key={it.id}>
-                      <button
-                        type="button"
-                        onClick={() => jumpTo(it.id)}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '4px 10px',
-                          paddingLeft: 10 + (it.level - 2) * 12,
-                          background: 'transparent',
-                          border: 0,
-                          borderLeft: `2px solid ${active ? 'var(--src-learn)' : 'transparent'}`,
-                          cursor: 'pointer',
-                          color: active ? 'var(--ink)' : 'var(--ink-sub)',
-                          fontSize: it.level === 2 ? 12 : 11.5,
-                          fontWeight: active ? 600 : 400,
-                          fontFamily: 'var(--font-sans)',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {it.text}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
-            </aside>
+      <div ref={scrollRef} className="kb-scroll" style={{ flex: 1, padding: '32px 40px 40px', minHeight: 0 }}>
+        <div className="md" style={{ maxWidth: 780, margin: '0 auto' }}>
+          <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6 }}>{path}</div>
+          {file.meta && file.meta.tags && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+              {(Array.isArray(file.meta.tags) ? file.meta.tags : [file.meta.tags]).map((t) => (
+                <span key={t} className="kb-mono" style={{ fontSize: 10.5, color: 'var(--src-obsidian)', background: 'var(--src-obsidian-bg)', padding: '2px 8px', borderRadius: 3 }}>
+                  #{t}
+                </span>
+              ))}
+            </div>
           )}
+          <div ref={mdRef} dangerouslySetInnerHTML={{ __html: file.html }} />
         </div>
       </div>
     </div>
+  );
+}
+
+// ── TOC 列表（纯内容，交给外部 CollapsibleSection 包装） ─────
+// 接收 MarkdownView 通过 onToc 报告的数据 + jumpTo。空列表时返回提示。
+export function TocList({ toc, activeId, onJump, accentColor = 'var(--src-learn)' }) {
+  if (!toc || toc.length === 0) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>
+        当前文档没有标题
+      </div>
+    );
+  }
+  return (
+    <ol style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 12, lineHeight: 1.55 }}>
+      {toc.map((it) => {
+        const active = activeId === it.id;
+        return (
+          <li key={it.id}>
+            <button
+              type="button"
+              onClick={() => onJump?.(it.id)}
+              title={it.text}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                padding: '4px 14px',
+                paddingLeft: 14 + (it.level - 2) * 12,
+                background: 'transparent',
+                border: 0,
+                borderLeft: `2px solid ${active ? accentColor : 'transparent'}`,
+                cursor: 'pointer',
+                color: active ? 'var(--ink)' : 'var(--ink-sub)',
+                fontSize: it.level === 2 ? 12 : 11.5,
+                fontWeight: active ? 600 : 400,
+                fontFamily: 'var(--font-sans)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {it.text}
+            </button>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
-import { EmptyState, LoadingState, ErrorState, MarkdownView } from '../components/ReaderPanel.jsx';
+import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
+import SidePanel from '../components/SidePanel.jsx';
+import CollapsibleSection from '../components/CollapsibleSection.jsx';
+import RecentList from '../components/RecentList.jsx';
+import useRememberedPath from '../lib/useRememberedPath.js';
+import useRecentFiles from '../lib/useRecentFiles.js';
 import { getTree, getFile, subscribeFileEvents } from '../lib/api.js';
 
 const SOURCE = 'work';
@@ -230,75 +234,54 @@ function Sidebar({
 }
 
 // ── 右栏：全部活跃任务 ──────────────────────────────────
-function ActiveTasks({ activeTasks, selectedPath, onSelect }) {
+function flattenActive(activeTasks) {
   const all = Object.entries(activeTasks).flatMap(([proj, list]) =>
     list.map((f) => ({ proj, ...f })),
   );
   all.sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
+  return all;
+}
 
-  return (
-    <div
-      style={{
-        width: 260,
-        background: 'var(--bg-tint)',
-        borderLeft: '1px solid var(--border)',
-        padding: 14,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 600,
-            color: 'var(--ink-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            marginBottom: 8,
-          }}
-        >
-          全部活跃任务 · {all.length}
-        </div>
-        {all.length === 0 && (
-          <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '8px 0' }}>
-            所有项目都没有 md/codex/current/ 目录
-          </div>
-        )}
-        {all.map((t) => {
-          const active = selectedPath === t.path;
-          return (
-            <div
-              key={t.path}
-              className="kb-card"
-              style={{
-                padding: 10,
-                marginBottom: 6,
-                cursor: 'pointer',
-                borderColor: active ? 'var(--src-work)' : 'var(--border)',
-                borderWidth: active ? 1.5 : 1,
-                background: active ? 'var(--bg-raised)' : 'transparent',
-              }}
-              onClick={() => onSelect(t.path)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <span className="src-dot work" />
-                <span
-                  className="kb-mono"
-                  style={{ fontSize: 10.5, color: 'var(--src-work)', fontWeight: 600 }}
-                >
-                  {t.proj}
-                </span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-muted)' }}>
-                  {new Date(t.mtime).toLocaleDateString('zh-CN')}
-                </span>
-              </div>
-              <div className="kb-mono" style={{ fontSize: 11.5, color: 'var(--ink)' }}>{t.name}</div>
-            </div>
-          );
-        })}
+function ActiveTasksBody({ activeTasks, selectedPath, onSelect }) {
+  const all = flattenActive(activeTasks);
+  if (all.length === 0) {
+    return (
+      <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>
+        所有项目都没有 md/codex/current/ 目录
       </div>
+    );
+  }
+  return (
+    <div style={{ padding: '4px 12px 0' }}>
+      {all.map((t) => {
+        const active = selectedPath === t.path;
+        return (
+          <div
+            key={t.path}
+            className="kb-card"
+            style={{
+              padding: 10,
+              marginBottom: 6,
+              cursor: 'pointer',
+              borderColor: active ? 'var(--src-work)' : 'var(--border)',
+              borderWidth: active ? 1.5 : 1,
+              background: active ? 'var(--bg-raised)' : 'transparent',
+            }}
+            onClick={() => onSelect(t.path)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+              <span className="src-dot work" />
+              <span className="kb-mono" style={{ fontSize: 10.5, color: 'var(--src-work)', fontWeight: 600 }}>
+                {t.proj}
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-muted)' }}>
+                {new Date(t.mtime).toLocaleDateString('zh-CN')}
+              </span>
+            </div>
+            <div className="kb-mono" style={{ fontSize: 11.5, color: 'var(--ink)' }}>{t.name}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -310,13 +293,14 @@ export default function Work() {
   const [activeTasks, setActiveTasks] = useState({});
   const [treeMap, setTreeMap] = useState({});
   const [expanded, setExpanded] = useState(new Set());
-  const [sp, setSp] = useSearchParams();
-  const selectedPath = sp.get('path') || null;
-  const setSelectedPath = (p) => setSp(p ? { path: p } : {});
+  const [selectedPath, setSelectedPath] = useRememberedPath('kb-last-path-work');
   const [file, setFile] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState(null);
   const [initError, setInitError] = useState(null);
+  const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
+  const [recent] = useRecentFiles('kb-recent-work', selectedPath);
+  const activeCount = Object.values(activeTasks).reduce((sum, list) => sum + list.length, 0);
 
   // 初始化：项目列表 + 并发拉每个项目的 codex/current
   useEffect(() => {
@@ -478,11 +462,55 @@ export default function Work() {
         ) : fileError ? (
           <ErrorState msg={`无法加载文件：${fileError}`} />
         ) : file ? (
-          <MarkdownView path={selectedPath} file={file} badge={badge} />
+          <MarkdownView path={selectedPath} file={file} badge={badge} onToc={setTocState} />
         ) : (
           <LoadingState />
         )}
-        <ActiveTasks activeTasks={activeTasks} selectedPath={selectedPath} onSelect={setSelectedPath} />
+        <SidePanel storageKey="work-right" defaultWidth={300}>
+          <div className="kb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <CollapsibleSection
+              storageKey="kb-section-work-toc"
+              title="目录"
+              icon="list"
+              accent="var(--src-work)"
+              badge={tocState.toc.length || null}
+            >
+              <TocList
+                toc={tocState.toc}
+                activeId={tocState.activeId}
+                onJump={tocState.jumpTo}
+                accentColor="var(--src-work)"
+              />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-work-recent"
+              title="最近打开"
+              icon="clock"
+              accent="var(--src-work)"
+              badge={recent.length || null}
+            >
+              <RecentList
+                recent={recent}
+                currentPath={selectedPath}
+                onSelect={setSelectedPath}
+                accent="var(--src-work)"
+              />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-work-active"
+              title="活跃任务"
+              icon="flag"
+              accent="var(--src-work)"
+              badge={activeCount || null}
+            >
+              <ActiveTasksBody
+                activeTasks={activeTasks}
+                selectedPath={selectedPath}
+                onSelect={setSelectedPath}
+              />
+            </CollapsibleSection>
+          </div>
+        </SidePanel>
       </div>
     </Frame>
   );

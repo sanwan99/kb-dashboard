@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 
 import { SOURCES, SOURCES_BY_ID, safeResolve } from './lib/sources.js';
 import { listDir } from './lib/tree.js';
@@ -12,7 +13,7 @@ import { buildHomeOverview } from './lib/stats.js';
 import { buildSearchIndex, searchIndex, searchStats } from './lib/search.js';
 import { buildObsidianIndex, getBacklinks, getNeighbors, getAllTags, obsidianStats } from './lib/obsidian-index.js';
 import { startWatchers, subscribe, setRebuildHandler } from './lib/watcher.js';
-import { guessMime } from './lib/mime.js';
+import { guessMime, IMAGE_EXTS } from './lib/mime.js';
 
 const PORT = Number(process.env.PORT || 5174);
 const HOST = '127.0.0.1';
@@ -120,6 +121,56 @@ app.get('/api/blob', async (req, reply) => {
     return reply.send(createReadStream(abs));
   } catch (err) {
     req.log.warn({ err }, 'blob failed');
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// GET /api/local-image?path=... — 本机图片代理
+// 场景：笔记里写了三源之外的本机绝对路径（如 ~/Downloads/.../xxx.png）。
+// 安全约束：
+//   - 仅 GET，仅监听 127.0.0.1
+//   - 扩展名必须是图片
+//   - realpath 后必须落在白名单目录前缀内（默认：用户主目录 + 三源 realRoot）
+//   - KB_IMAGE_WHITELIST 可用冒号分隔额外追加允许目录
+function getImageWhitelist() {
+  const roots = new Set();
+  roots.add(path.resolve(os.homedir()));
+  for (const s of SOURCES) {
+    if (s.root) roots.add(path.resolve(s.root));
+    if (s.realRoot) roots.add(path.resolve(s.realRoot));
+  }
+  const extra = (process.env.KB_IMAGE_WHITELIST || '')
+    .split(':').map((x) => x.trim()).filter(Boolean);
+  for (const p of extra) roots.add(path.resolve(p));
+  return [...roots];
+}
+
+app.get('/api/local-image', async (req, reply) => {
+  const { path: raw } = req.query;
+  if (!raw) return reply.code(400).send({ error: 'path required' });
+  try {
+    let p = String(raw);
+    if (p === '~') p = os.homedir();
+    else if (p.startsWith('~/')) p = path.join(os.homedir(), p.slice(2));
+    if (!path.isAbsolute(p)) {
+      return reply.code(400).send({ error: 'absolute path required' });
+    }
+    const ext = path.extname(p).slice(1).toLowerCase();
+    if (!IMAGE_EXTS.has(ext)) {
+      return reply.code(400).send({ error: 'not an image' });
+    }
+    const real = await fs.realpath(p);
+    const whitelist = getImageWhitelist();
+    const ok = whitelist.some((root) => real === root || real.startsWith(root + path.sep));
+    if (!ok) return reply.code(403).send({ error: 'path not whitelisted' });
+    const stat = await fs.stat(real);
+    if (!stat.isFile()) return reply.code(400).send({ error: 'not a file' });
+    reply.header('Content-Type', guessMime(ext));
+    reply.header('Content-Length', stat.size);
+    reply.header('Cache-Control', 'public, max-age=3600');
+    return reply.send(createReadStream(real));
+  } catch (err) {
+    req.log.warn({ err }, 'local-image failed');
     return reply.code(err.statusCode || 500).send({ error: err.message });
   }
 });

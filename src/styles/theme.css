@@ -192,6 +192,20 @@ html, body, #root {
   border-bottom: 1px solid var(--border);
 }
 
+/* Electron + macOS：hiddenInset 红绿灯覆盖在顶栏左上角，让出空间并允许拖拽窗口。
+   浏览器访问 (dev http://localhost:5173) 下不会命中此规则。 */
+[data-kb-platform="electron-mac"] .kb-topbar {
+  padding-left: 82px;
+  -webkit-app-region: drag;
+}
+[data-kb-platform="electron-mac"] .kb-topbar a,
+[data-kb-platform="electron-mac"] .kb-topbar button,
+[data-kb-platform="electron-mac"] .kb-topbar input,
+[data-kb-platform="electron-mac"] .kb-topbar .kb-btn,
+[data-kb-platform="electron-mac"] .kb-topbar [role="button"] {
+  -webkit-app-region: no-drag;
+}
+
 .kb-logo {
   font-family: var(--font-serif);
   font-weight: 600;

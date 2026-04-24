@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
-import { EmptyState, LoadingState, ErrorState, MarkdownView } from '../components/ReaderPanel.jsx';
+import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
+import SidePanel from '../components/SidePanel.jsx';
+import CollapsibleSection from '../components/CollapsibleSection.jsx';
+import RecentList from '../components/RecentList.jsx';
+import useRememberedPath from '../lib/useRememberedPath.js';
+import useRecentFiles from '../lib/useRecentFiles.js';
 import { getTree, getFile, getObsidianBacklinks, getObsidianTags, getObsidianNeighbors, subscribeFileEvents } from '../lib/api.js';
 
 const SOURCE = 'obsidian';
@@ -146,7 +150,7 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, tags }) 
 }
 
 // ── 局部图谱（径向布局 SVG）──────────────────────────────
-function LocalGraph({ selectedPath, onNavigate }) {
+function LocalGraph({ selectedPath, onNavigate, compact = false }) {
   const [data, setData] = useState(null);
   useEffect(() => {
     if (!selectedPath) { setData(null); return; }
@@ -155,7 +159,10 @@ function LocalGraph({ selectedPath, onNavigate }) {
       .catch(() => setData({ neighbors: [] }));
   }, [selectedPath]);
 
-  if (!selectedPath) return null;
+  if (!selectedPath) {
+    if (compact) return <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>选中一个笔记后显示图谱</div>;
+    return null;
+  }
   const neighbors = data?.neighbors || [];
   const W = 252, H = 140;
   const cx = W / 2, cy = H / 2;
@@ -168,129 +175,130 @@ function LocalGraph({ selectedPath, onNavigate }) {
     both: '#C15F3C',
   };
 
+  const legend = (
+    <span style={{ fontSize: 9.5, display: 'flex', gap: 6 }}>
+      <span style={{ color: COLORS.in }}>● 入链</span>
+      <span style={{ color: COLORS.out }}>● 出链</span>
+    </span>
+  );
+  const svgBlock = (
+    <div style={{ height: H + 8, background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+        {neighbors.length === 0 ? (
+          <>
+            <circle cx={cx} cy={cy} r="8" fill="var(--src-obsidian)" />
+            <text x={cx} y={cy + 24} fontSize="10" textAnchor="middle" fill="var(--ink-muted)" fontFamily="var(--font-mono)">无邻居</text>
+          </>
+        ) : (
+          <>
+            {neighbors.map((n, i) => {
+              const angle = (i / neighbors.length) * Math.PI * 2 - Math.PI / 2;
+              const x = cx + r * Math.cos(angle);
+              const y = cy + r * Math.sin(angle);
+              const color = COLORS[n.direction];
+              const name = n.path.split('/').pop().replace(/\.(md|markdown)$/i, '');
+              return (
+                <g key={n.path} style={{ cursor: 'pointer' }} onClick={() => onNavigate(n.path)}>
+                  <line x1={cx} y1={cy} x2={x} y2={y} stroke={color} strokeWidth="1" strokeOpacity="0.4" />
+                  <circle cx={x} cy={y} r="5" fill={color} opacity="0.85" />
+                  <title>{name}</title>
+                </g>
+              );
+            })}
+            <circle cx={cx} cy={cy} r="8" fill="var(--src-obsidian)" stroke="var(--bg-raised)" strokeWidth="2" />
+            <text x={cx} y={cy + 22} fontSize="10" textAnchor="middle" fill="var(--src-obsidian)" fontFamily="var(--font-mono)" fontWeight="600">
+              {centerName.length > 12 ? centerName.slice(0, 11) + '…' : centerName}
+            </text>
+          </>
+        )}
+      </svg>
+    </div>
+  );
+  const footer = (
+    <div className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 4 }}>
+      {neighbors.length} 个邻居 · 点击圆点跳转
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <div style={{ padding: '0 14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>{legend}</div>
+        {svgBlock}
+        {footer}
+      </div>
+    );
+  }
+
   return (
     <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px' }}>
       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10 }}>
         <span>局部图谱</span>
-        <span style={{ marginLeft: 'auto', fontSize: 9.5, display: 'flex', gap: 6 }}>
-          <span style={{ color: COLORS.in }}>● 入链</span>
-          <span style={{ color: COLORS.out }}>● 出链</span>
-        </span>
+        <span style={{ marginLeft: 'auto' }}>{legend}</span>
       </div>
-      <div style={{ height: H + 8, background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-        <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
-          {neighbors.length === 0 ? (
-            <>
-              <circle cx={cx} cy={cy} r="8" fill="var(--src-obsidian)" />
-              <text x={cx} y={cy + 24} fontSize="10" textAnchor="middle" fill="var(--ink-muted)" fontFamily="var(--font-mono)">无邻居</text>
-            </>
-          ) : (
-            <>
-              {neighbors.map((n, i) => {
-                const angle = (i / neighbors.length) * Math.PI * 2 - Math.PI / 2;
-                const x = cx + r * Math.cos(angle);
-                const y = cy + r * Math.sin(angle);
-                const color = COLORS[n.direction];
-                const name = n.path.split('/').pop().replace(/\.(md|markdown)$/i, '');
-                return (
-                  <g key={n.path} style={{ cursor: 'pointer' }} onClick={() => onNavigate(n.path)}>
-                    <line x1={cx} y1={cy} x2={x} y2={y} stroke={color} strokeWidth="1" strokeOpacity="0.4" />
-                    <circle cx={x} cy={y} r="5" fill={color} opacity="0.85" />
-                    <title>{name}</title>
-                  </g>
-                );
-              })}
-              <circle cx={cx} cy={cy} r="8" fill="var(--src-obsidian)" stroke="var(--bg-raised)" strokeWidth="2" />
-              <text x={cx} y={cy + 22} fontSize="10" textAnchor="middle" fill="var(--src-obsidian)" fontFamily="var(--font-mono)" fontWeight="600">
-                {centerName.length > 12 ? centerName.slice(0, 11) + '…' : centerName}
-              </text>
-            </>
-          )}
-        </svg>
-      </div>
-      <div className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 4 }}>
-        {neighbors.length} 个邻居 · 点击圆点跳转
-      </div>
+      {svgBlock}
+      {footer}
     </div>
   );
 }
 
-// ── 右栏：反向链接 ───────────────────────────────────────
-function BacklinksPanel({ selectedPath, onNavigate }) {
+// ── 反向链接 ───────────────────────────────────────────────
+function useBacklinks(selectedPath) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-
   useEffect(() => {
-    if (!selectedPath) {
-      setData(null);
-      return;
-    }
+    if (!selectedPath) { setData(null); return; }
     setLoading(true);
     getObsidianBacklinks(selectedPath)
       .then(setData)
       .catch(() => setData({ backlinks: [] }))
       .finally(() => setLoading(false));
   }, [selectedPath]);
+  return {
+    data,
+    loading,
+    backlinks: data?.backlinks || [],
+    stats: data?.stats,
+  };
+}
 
-  const backlinks = data?.backlinks || [];
-
+function BacklinksBody({ selectedPath, backlinks, loading, onNavigate }) {
+  if (!selectedPath) {
+    return <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>左栏选中文件后显示反链</div>;
+  }
+  if (loading) {
+    return <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>加载中…</div>;
+  }
+  if (backlinks.length === 0) {
+    return (
+      <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', padding: '6px 14px', lineHeight: 1.55 }}>
+        暂无反向链接
+        <div style={{ fontSize: 10.5, marginTop: 4 }}>没有其他笔记通过 [[wikilink]] 指向当前文件</div>
+      </div>
+    );
+  }
   return (
-    <div style={{ width: 280, background: 'var(--bg-tint)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <Icon name="link" size={13} color="var(--src-obsidian)" />
-          <b style={{ fontSize: 13 }}>反向链接</b>
-          <span
-            className="badge"
-            style={{ marginLeft: 'auto', background: 'var(--src-obsidian-bg)', color: 'var(--src-obsidian)', borderColor: '#DFD5F0' }}
-          >
-            {selectedPath ? backlinks.length : '—'}
-          </span>
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>谁引用了这篇笔记（[[wikilink]]）</div>
-      </div>
-
-      <div className="kb-scroll" style={{ flex: 1, padding: '10px 12px' }}>
-        {!selectedPath && (
-          <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: 8 }}>左栏选中文件后显示反链</div>
-        )}
-        {selectedPath && loading && (
-          <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: 8 }}>加载中…</div>
-        )}
-        {selectedPath && !loading && backlinks.length === 0 && (
-          <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', padding: 8, lineHeight: 1.55 }}>
-            暂无反向链接
-            <div style={{ fontSize: 10.5, marginTop: 4 }}>没有其他笔记通过 [[wikilink]] 指向当前文件</div>
+    <div style={{ padding: '4px 12px 0' }}>
+      {backlinks.map((b, i) => (
+        <div
+          key={i}
+          className="kb-card"
+          style={{ padding: 10, marginBottom: 8, borderRadius: 6, cursor: 'pointer' }}
+          onClick={() => onNavigate(b.from)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="file" size={11} color="var(--src-obsidian)" />
+            <span className="kb-mono" style={{ fontSize: 11.5, color: 'var(--ink)', fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {b.from.split('/').pop()}
+            </span>
+            <span className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)' }}>L{b.line}</span>
           </div>
-        )}
-        {backlinks.map((b, i) => (
-          <div
-            key={i}
-            className="kb-card"
-            style={{ padding: 10, marginBottom: 8, borderRadius: 6, cursor: 'pointer' }}
-            onClick={() => onNavigate(b.from)}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Icon name="file" size={11} color="var(--src-obsidian)" />
-              <span className="kb-mono" style={{ fontSize: 11.5, color: 'var(--ink)', fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {b.from.split('/').pop()}
-              </span>
-              <span className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)' }}>L{b.line}</span>
-            </div>
-            <div className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 2 }}>
-              {b.from.split('/').slice(0, -1).join('/') || '/'}
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--ink-sub)', lineHeight: 1.5, marginTop: 6 }}>{b.preview}</div>
+          <div className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 2 }}>
+            {b.from.split('/').slice(0, -1).join('/') || '/'}
           </div>
-        ))}
-      </div>
-
-      <LocalGraph selectedPath={selectedPath} onNavigate={onNavigate} />
-      <div style={{ borderTop: '1px solid var(--border)', padding: '8px 14px' }}>
-        <div className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)', lineHeight: 1.55 }}>
-          {data?.stats ? `${data.stats.fileCount} 文件 · ${data.stats.backlinkTargets} 被引目标` : '…'}
+          <div style={{ fontSize: 11.5, color: 'var(--ink-sub)', lineHeight: 1.5, marginTop: 6 }}>{b.preview}</div>
         </div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -299,14 +307,15 @@ function BacklinksPanel({ selectedPath, onNavigate }) {
 export default function Obsidian() {
   const [treeMap, setTreeMap] = useState({});         // path -> entries[]
   const [expanded, setExpanded] = useState(new Set()); // 非根展开的目录 path 集合
-  const [sp, setSp] = useSearchParams();
-  const selectedPath = sp.get('path') || null;
-  const setSelectedPath = (p) => setSp(p ? { path: p } : {});
+  const [selectedPath, setSelectedPath] = useRememberedPath('kb-last-path-obsidian');
   const [file, setFile] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState(null);
   const [rootError, setRootError] = useState(null);
   const [tags, setTags] = useState(null);
+  const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
+  const [recent] = useRecentFiles('kb-recent-obsidian', selectedPath);
+  const { backlinks, loading: blLoading, stats: blStats } = useBacklinks(selectedPath);
 
   // 初始化加载根
   useEffect(() => {
@@ -401,11 +410,70 @@ export default function Obsidian() {
         ) : fileError ? (
           <ErrorState msg={`无法加载文件：${fileError}`} />
         ) : file ? (
-          <MarkdownView path={selectedPath} file={file} />
+          <MarkdownView path={selectedPath} file={file} onToc={setTocState} />
         ) : (
           <LoadingState />
         )}
-        <BacklinksPanel selectedPath={selectedPath} onNavigate={setSelectedPath} />
+        <SidePanel storageKey="obsidian-right" defaultWidth={300}>
+          <div className="kb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <CollapsibleSection
+              storageKey="kb-section-obsidian-toc"
+              title="目录"
+              icon="list"
+              accent="var(--src-obsidian)"
+              badge={tocState.toc.length || null}
+            >
+              <TocList
+                toc={tocState.toc}
+                activeId={tocState.activeId}
+                onJump={tocState.jumpTo}
+                accentColor="var(--src-obsidian)"
+              />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-obsidian-recent"
+              title="最近打开"
+              icon="clock"
+              accent="var(--src-obsidian)"
+              badge={recent.length || null}
+            >
+              <RecentList
+                recent={recent}
+                currentPath={selectedPath}
+                onSelect={setSelectedPath}
+                accent="var(--src-obsidian)"
+              />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-obsidian-backlinks"
+              title="反向链接"
+              icon="link"
+              accent="var(--src-obsidian)"
+              badge={selectedPath ? backlinks.length : null}
+            >
+              <BacklinksBody
+                selectedPath={selectedPath}
+                backlinks={backlinks}
+                loading={blLoading}
+                onNavigate={setSelectedPath}
+              />
+            </CollapsibleSection>
+            <CollapsibleSection
+              storageKey="kb-section-obsidian-graph"
+              title="局部图谱"
+              icon="graph"
+              accent="var(--src-obsidian)"
+              defaultOpen={false}
+            >
+              <LocalGraph selectedPath={selectedPath} onNavigate={setSelectedPath} compact />
+            </CollapsibleSection>
+            {blStats && (
+              <div className="kb-mono" style={{ fontSize: 10, color: 'var(--ink-muted)', padding: '10px 14px', lineHeight: 1.55 }}>
+                {blStats.fileCount} 文件 · {blStats.backlinkTargets} 被引目标
+              </div>
+            )}
+          </div>
+        </SidePanel>
       </div>
     </Frame>
   );
