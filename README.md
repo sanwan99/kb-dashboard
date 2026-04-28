@@ -204,3 +204,7 @@ data/work     → ~/work/code/sanwan/notes
 - 三源软链是每台机各自建的，不入 git；新机器跑 `./start.sh` 会自动建
 - 搜索 / Obsidian 索引启动时后台建（不阻塞 listen）；改了扫描逻辑要 **重启后端** 才能重建
 - 改 md 不用重启后端，chokidar + SSE 自动推送
+
+## License
+
+MIT — 详见 [LICENSE](./LICENSE)。

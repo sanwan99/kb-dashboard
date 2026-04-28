@@ -5,6 +5,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "author": "haolin",
+  "license": "MIT",
   "description": "个人知识库三源聚合看板 — 学习项目 / Obsidian / 公司笔记",
   "scripts": {
     "dev": "concurrently -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
