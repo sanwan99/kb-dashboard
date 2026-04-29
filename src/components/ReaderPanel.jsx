@@ -1,10 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 import { Icon } from './primitives.jsx';
 import { usePrefs } from '../lib/usePrefs.js';
 import { getCachedSources } from '../lib/api.js';
+
+// 滚动位置记忆：URL（pathname + search）→ scrollTop
+// MarkdownView 切换文件时会被父组件 unmount/remount，所以用模块级 Map 跨实例存
+const scrollMemory = new Map();
 
 function slugify(text) {
   return (text || '')
@@ -212,10 +216,35 @@ export function MarkdownView({ path, file, badge, onToc }) {
   const [sources, setSources] = useState([]);
   const prefs = usePrefs();
   const navigate = useNavigate();
+  const location = useLocation();
+  const urlKey = `${location.pathname}${location.search}`;
 
   useEffect(() => {
     getCachedSources().then(setSources).catch(() => setSources([]));
   }, []);
+
+  // 滚动位置记忆：滚动时持续存，unmount/URL 切换时再保一次
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      scrollMemory.set(urlKey, container.scrollTop);
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      // 卸载或 URL 切换前快照最后位置（点链接跳走那一刻的滚动位置）
+      scrollMemory.set(urlKey, container.scrollTop);
+      container.removeEventListener('scroll', onScroll);
+    };
+  }, [urlKey]);
+
+  // 恢复滚动位置：mount 后立即同步设置 scrollTop，避免闪一下回顶
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const saved = scrollMemory.get(urlKey);
+    container.scrollTop = typeof saved === 'number' ? saved : 0;
+  }, [urlKey]);
 
   const segments = path.split('/');
   const dirParts = segments.slice(0, -1);
