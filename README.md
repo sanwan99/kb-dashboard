@@ -2,7 +2,9 @@
 
 本地 Markdown 三源聚合看板：**学习项目** / **Obsidian 知识库** / **公司项目笔记**。Electron 包装成桌面 App。
 
-![screenshot](screenshots/canvas-current.jpg)
+![首页 · 三源卡片墙](screenshots/home.jpg)
+
+> 暖米白底 + Claude 风衬线标题，三源各持一色（蓝 / 紫 / 橙），800+ md 跨源全文搜索 ⌘K。
 
 ## 特性
 
@@ -16,6 +18,26 @@
 - **深色主题**：light / dark / system 三档，跟随系统配色切换
 - **智能链接跳转**：5 档识别（http/锚点/绝对源路径/相对 md/镜像仓库路径）
 - **Electron 打包**：单进程内置 Fastify + `asar + asarUnpack`，产出 `.app` 可直接启动
+
+## 界面预览
+
+### 学习项目 · 阶段进度 + 当前断点 + 打卡热图
+
+![学习项目](screenshots/learn.jpg)
+
+左栏 `knowledge` / `review` 切换 + 文件名过滤；中栏顶部 6 阶段进度条 + 当前断点折叠卡（`localStorage` 记忆开合）；右栏 progress.md 元信息 + 30 天连续打卡热图。
+
+### Obsidian · PARA 树 + 反链 + 局部图谱
+
+![Obsidian](screenshots/obsidian.jpg)
+
+左栏 PARA（00-收件箱 / 10-Projects / 20-Areas / ...）单级展开，输入即过滤已展开节点；右栏可折叠分区：目录 TOC / 最近打开（持久化）/ 反向链接 / 局部图谱。
+
+### 公司笔记 · 项目列表 + 活跃任务聚合
+
+![公司笔记](screenshots/work.jpg)
+
+跨项目扫所有 `<project>/md/codex/current/*.md` 聚合到右栏"活跃修改"；项目卡片角标显示活跃任务数；打开任意项目自动展开 `md/codex/current/` 并高亮当前断点。
 
 ## 启动
 
@@ -182,3 +204,7 @@ data/work     → ~/work/code/sanwan/notes
 - 三源软链是每台机各自建的，不入 git；新机器跑 `./start.sh` 会自动建
 - 搜索 / Obsidian 索引启动时后台建（不阻塞 listen）；改了扫描逻辑要 **重启后端** 才能重建
 - 改 md 不用重启后端，chokidar + SSE 自动推送
+
+## License
+
+MIT — 详见 [LICENSE](./LICENSE)。
