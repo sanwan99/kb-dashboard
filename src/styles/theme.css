@@ -124,6 +124,10 @@ html, body, #root {
 .kb-btn.ghost { background: transparent; border-color: transparent; }
 .kb-btn.ghost:hover { background: var(--bg-sunk); }
 
+/* 右键菜单条目 */
+.kb-ctx-item:hover:not(:disabled) { background: var(--bg-tint); }
+.kb-ctx-item:focus-visible { outline: 1px solid var(--border-strong); outline-offset: -1px; }
+
 .kb-input {
   height: 30px; padding: 0 10px;
   border-radius: var(--radius-sm);

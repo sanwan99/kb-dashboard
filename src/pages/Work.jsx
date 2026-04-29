@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
 import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
 import SidePanel from '../components/SidePanel.jsx';
@@ -6,6 +6,8 @@ import CollapsibleSection from '../components/CollapsibleSection.jsx';
 import RecentList from '../components/RecentList.jsx';
 import useRememberedPath from '../lib/useRememberedPath.js';
 import useRecentFiles from '../lib/useRecentFiles.js';
+import { useContextMenu } from '../lib/useContextMenu.jsx';
+import { buildFileMenuItems } from '../lib/fileActions.js';
 import { getTree, getFile, getRecent, subscribeFileEvents } from '../lib/api.js';
 
 const SOURCE = 'work';
@@ -37,6 +39,7 @@ function Sidebar({
   onSelectFile,
 }) {
   const [filter, setFilter] = useState('');
+  const ctx = useContextMenu();
   const q = filter.trim().toLowerCase();
 
   const renderLevel = (path, depth = 0) => {
@@ -80,6 +83,7 @@ function Sidebar({
                 : null),
             }}
             onClick={() => (isDir ? onToggle(e.path) : isMd ? onSelectFile(e.path) : null)}
+            onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir }))}
           >
             {isDir ? (
               <Icon name={isExp ? 'chev-d' : 'chev-r'} size={10} color="var(--ink-muted)" />
@@ -165,6 +169,7 @@ function Sidebar({
               className={`tree-row ${selected ? 'active-work' : ''}`}
               style={{ gap: 6, padding: '4px 8px', cursor: 'pointer' }}
               onClick={() => onSelectProject(p.name)}
+              onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: p.name, isDir: true }))}
             >
               <Icon name="git" size={12} color={selected ? 'var(--src-work)' : 'var(--ink-muted)'} />
               <span className="kb-mono" style={{ fontSize: 12, flex: 1, fontWeight: selected ? 600 : 400 }}>{p.name}</span>
@@ -229,6 +234,7 @@ function Sidebar({
           </div>
         </>
       )}
+      {ctx.Element}
     </div>
   );
 }
@@ -414,12 +420,41 @@ export default function Work() {
       .finally(() => setFileLoading(false));
   }, [selectedPath]);
 
-  // 订阅文件变更 → 当前文件有变则静默重拉
+  // 订阅文件变更：当前文件改/删提示 + 目录树命中祖先重拉
+  // 用 ref 持有 treeMap 避免每次 setTreeMap 触发重新订阅
+  const treeMapRef = useRef(treeMap);
+  useEffect(() => { treeMapRef.current = treeMap; }, [treeMap]);
+
   useEffect(() => {
     const unsub = subscribeFileEvents((evt) => {
       if (evt.source !== SOURCE) return;
-      if (selectedPath && evt.path === selectedPath && evt.type !== 'unlink') {
-        getFile(SOURCE, selectedPath).then(setFile).catch(() => {});
+
+      // 1) 当前打开的文件被外部改/删
+      if (selectedPath && evt.path === selectedPath) {
+        if (evt.type === 'unlink') {
+          setFile(null);
+          setFileError('该文件已被外部删除或移走');
+        } else {
+          getFile(SOURCE, selectedPath)
+            .then((f) => { setFile(f); setFileError(null); })
+            .catch(() => {});
+        }
+        return;
+      }
+
+      // 2) 目录结构变化（add/unlink）→ 沿祖先链找最深命中的 treeMap key 重拉
+      if (evt.type === 'add' || evt.type === 'unlink') {
+        const segs = evt.path.split('/');
+        const tm = treeMapRef.current;
+        for (let i = segs.length - 1; i >= 0; i--) {
+          const parent = i === 0 ? '' : segs.slice(0, i).join('/');
+          if (parent in tm) {
+            getTree(SOURCE, parent)
+              .then(({ entries }) => setTreeMap((m) => ({ ...m, [parent]: entries })))
+              .catch(() => {});
+            break;
+          }
+        }
       }
     });
     return unsub;
@@ -533,6 +568,7 @@ export default function Work() {
                 currentPath={selectedPath}
                 onSelect={setSelectedPath}
                 accent="var(--src-work)"
+                source="work"
               />
             </CollapsibleSection>
             <CollapsibleSection

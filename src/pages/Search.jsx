@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
-import { search as apiSearch, getSearchStats } from '../lib/api.js';
+import { search as apiSearch, getSearchStats, subscribeFileEvents } from '../lib/api.js';
 
 const SOURCE_LABELS = {
   learn: { label: '学习项目', kind: '学习' },
@@ -62,12 +62,27 @@ export default function Search() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
+  const [indexDirty, setIndexDirty] = useState(false);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
 
   useEffect(() => {
     getSearchStats().then(setStats).catch(() => {});
     inputRef.current?.focus();
+  }, []);
+
+  // SSE：文件事件 → 标"索引可能已更新"。后端 5s 防抖重建索引，前端再 5s 防抖
+  // 提示，给后端一点缓冲，避免提示出现得比索引就绪还早。
+  useEffect(() => {
+    let t = null;
+    const unsub = subscribeFileEvents(() => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        setIndexDirty(true);
+        getSearchStats().then(setStats).catch(() => {});
+      }, 5500);
+    });
+    return () => { unsub(); clearTimeout(t); };
   }, []);
 
   // debounced search
@@ -83,12 +98,29 @@ export default function Search() {
       setError(null);
       const srcs = Object.entries(enabledSources).filter(([, on]) => on).map(([k]) => k);
       apiSearch(q, { sources: srcs, limit: 60 })
-        .then(setData)
+        .then((d) => { setData(d); setIndexDirty(false); })
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     }, 180);
     return () => clearTimeout(debounceRef.current);
   }, [q, enabledSources]);
+
+  const refreshNow = () => {
+    if (!q.trim()) {
+      setIndexDirty(false);
+      getSearchStats().then(setStats).catch(() => {});
+      return;
+    }
+    clearTimeout(debounceRef.current);
+    setLoading(true);
+    setError(null);
+    const srcs = Object.entries(enabledSources).filter(([, on]) => on).map(([k]) => k);
+    apiSearch(q, { sources: srcs, limit: 60 })
+      .then((d) => { setData(d); setIndexDirty(false); })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+    getSearchStats().then(setStats).catch(() => {});
+  };
 
   const groupedCounts = useMemo(() => {
     if (!data) return { learn: 0, obsidian: 0, work: 0 };
@@ -211,6 +243,33 @@ export default function Search() {
                     <span><span className="src-dot work" /> 公司 <b>{groupedCounts.work}</b></span>
                   </>
                 ) : null}
+              </div>
+            )}
+
+            {indexDirty && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  background: 'var(--src-learn-bg)',
+                  border: '1px solid var(--border)',
+                  fontSize: 12,
+                  color: 'var(--ink-sub)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--src-learn)', flexShrink: 0 }} />
+                <span>检测到笔记有更新，搜索结果可能已过时。</span>
+                <button
+                  className="kb-btn"
+                  style={{ marginLeft: 'auto', height: 24, fontSize: 11.5 }}
+                  onClick={refreshNow}
+                >
+                  刷新结果
+                </button>
               </div>
             )}
           </div>

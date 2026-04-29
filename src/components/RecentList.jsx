@@ -1,4 +1,6 @@
 import React from 'react';
+import { useContextMenu } from '../lib/useContextMenu.jsx';
+import { buildFileMenuItems } from '../lib/fileActions.js';
 
 // 展示"最近打开"的 md 列表，卡片式样（与活跃任务视觉一致）
 // props:
@@ -6,7 +8,9 @@ import React from 'react';
 //   currentPath    — 当前高亮项
 //   onSelect(path) — 点击跳转
 //   accent         — 色（通常是当前源色）
-export default function RecentList({ recent = [], currentPath, onSelect, accent = 'var(--ink-sub)' }) {
+//   source         — 'learn' | 'obsidian' | 'work'，提供后右键菜单可用
+export default function RecentList({ recent = [], currentPath, onSelect, accent = 'var(--ink-sub)', source }) {
+  const ctx = useContextMenu();
   if (recent.length === 0) {
     return (
       <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>
@@ -28,6 +32,11 @@ export default function RecentList({ recent = [], currentPath, onSelect, accent 
             key={p}
             className="kb-card"
             onClick={() => onSelect?.(p)}
+            onContextMenu={
+              source
+                ? (e) => ctx.open(e, buildFileMenuItems({ source, relPath: p, isDir: false }))
+                : undefined
+            }
             title={p}
             style={{
               padding: 10,
@@ -94,6 +103,7 @@ export default function RecentList({ recent = [], currentPath, onSelect, accent 
           </div>
         );
       })}
+      {ctx.Element}
     </div>
   );
 }

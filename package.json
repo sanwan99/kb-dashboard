@@ -30,7 +30,8 @@
       "node_modules/fast-glob/**/*",
       "node_modules/gray-matter/**/*",
       "node_modules/marked/**/*",
-      "node_modules/chokidar/**/*"
+      "node_modules/chokidar/**/*",
+      "node_modules/js-yaml/**/*"
     ],
     "directories": {
       "output": "release"
@@ -45,7 +46,14 @@
       "mirror": "https://registry.npmmirror.com/-/binary/electron/"
     },
     "mac": {
-      "target": [{ "target": "dir", "arch": ["arm64"] }],
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.productivity",
       "identity": null,
       "gatekeeperAssess": false
@@ -58,6 +66,7 @@
     "fastify": "^5.8.5",
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.11.1",
+    "js-yaml": "^4.1.1",
     "marked": "^18.0.2",
     "mermaid": "^11.14.0",
     "minisearch": "^7.2.0",

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Frame, Icon, SourcePill, SectionHeader } from '../components/primitives.jsx';
-import { getHomeOverview } from '../lib/api.js';
+import { getHomeOverview, subscribeFileEvents } from '../lib/api.js';
 
 // 5 个 PARA 重点文件夹（与设计稿保持一致）
 const PARA_FEATURE = [
@@ -39,7 +39,20 @@ export default function Home() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    getHomeOverview().then(setOverview).catch((err) => setError(err.message));
+    let cancelled = false;
+    const load = () => {
+      getHomeOverview()
+        .then((d) => { if (!cancelled) { setOverview(d); setError(null); } })
+        .catch((err) => { if (!cancelled) setError(err.message); });
+    };
+    load();
+    // 文件变更 → 5s 防抖重拉概览（avoid 同一批改动多次拉聚合接口）
+    let t = null;
+    const unsub = subscribeFileEvents(() => {
+      clearTimeout(t);
+      t = setTimeout(load, 5000);
+    });
+    return () => { cancelled = true; unsub(); clearTimeout(t); };
   }, []);
 
   const g = overview?.global;

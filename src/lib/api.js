@@ -13,6 +13,29 @@ async function request(url) {
   return r.json();
 }
 
+async function postJson(url, body) {
+  const r = await fetch(apiUrl(url), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    let msg = '';
+    try {
+      const j = await r.json();
+      msg = j.error || JSON.stringify(j);
+    } catch {
+      msg = await r.text().catch(() => '');
+    }
+    throw new Error(`${r.status} ${r.statusText}: ${msg}`);
+  }
+  return r.json();
+}
+
+export function openWithExternal(body) {
+  return postJson('/api/open-with', body);
+}
+
 export function getSources() {
   return request('/api/sources').then((d) => d.sources);
 }

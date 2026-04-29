@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -268,6 +269,70 @@ app.get('/api/obsidian/neighbors', async (req, reply) => {
   const { path: p } = req.query;
   if (!p) return reply.code(400).send({ error: 'path required' });
   return getNeighbors(String(p));
+});
+
+// POST /api/open-with — 调起外部应用 / 在 Finder 中显示 / 等
+// macOS 专用，参数化 spawn 不走 shell；app 白名单 + 路径白名单 + ../ 防穿透
+const APP_WHITELIST = {
+  typora: 'Typora',
+};
+
+app.post('/api/open-with', async (req, reply) => {
+  if (process.platform !== 'darwin') {
+    return reply.code(501).send({ error: 'open-with 当前仅支持 macOS' });
+  }
+  const body = req.body || {};
+  const { action, app: appKey, source, path: relPath, absPath: rawAbs } = body;
+
+  if (action !== 'open' && action !== 'reveal') {
+    return reply.code(400).send({ error: 'action 必须为 "open" 或 "reveal"' });
+  }
+  if (action === 'open' && !APP_WHITELIST[appKey]) {
+    return reply.code(400).send({ error: `app 不在白名单: ${appKey}（当前仅支持 ${Object.keys(APP_WHITELIST).join(', ')}）` });
+  }
+
+  // 解析最终 absPath（safeResolve 路径 或 白名单 absPath）
+  let abs;
+  try {
+    if (source) {
+      const r = safeResolve(source, relPath || '');
+      abs = await fs.realpath(r.abs);
+    } else if (rawAbs) {
+      let p = String(rawAbs);
+      if (p === '~') p = os.homedir();
+      else if (p.startsWith('~/')) p = path.join(os.homedir(), p.slice(2));
+      if (!path.isAbsolute(p)) {
+        return reply.code(400).send({ error: '需要绝对路径' });
+      }
+      abs = await fs.realpath(p);
+      const whitelist = getImageWhitelist(); // 复用：homedir + 三源 root/realRoot
+      const ok = whitelist.some((root) => abs === root || abs.startsWith(root + path.sep));
+      if (!ok) return reply.code(403).send({ error: 'path 不在白名单内' });
+    } else {
+      return reply.code(400).send({ error: '必须提供 source+path 或 absPath' });
+    }
+    const stat = await fs.stat(abs);
+    if (action === 'open' && !stat.isFile()) {
+      return reply.code(400).send({ error: 'open 只支持文件，不支持目录' });
+    }
+  } catch (err) {
+    if (err.code === 'ENOENT') return reply.code(404).send({ error: '文件不存在' });
+    return reply.code(err.statusCode || 400).send({ error: err.message });
+  }
+
+  const args = action === 'reveal'
+    ? ['-R', abs]
+    : ['-a', APP_WHITELIST[appKey], abs];
+
+  try {
+    const child = spawn('open', args, { detached: true, stdio: 'ignore' });
+    child.unref();
+    req.log.info({ action, app: appKey, absPath: abs }, 'open-with dispatched');
+    return { ok: true, action, app: appKey || null, absPath: abs };
+  } catch (err) {
+    req.log.error({ err, args }, 'open-with spawn failed');
+    return reply.code(500).send({ error: err.message });
+  }
 });
 
 app.get('/api/health', async () => ({

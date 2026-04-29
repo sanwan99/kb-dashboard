@@ -127,6 +127,7 @@ kb-dashboard/
    - `asar: true` + `asarUnpack: [server, 核心 node_modules]`（ESM 加载需要文件系统路径，不能在 asar 内）
 8. **中文路径**：前端 `URLSearchParams` 自动 percent-encoding；Fastify 默认解码；curl 测试用 `--data-urlencode`。
 9. **Markdown 链接跳转**：`ReaderPanel.jsx` 的 `processLinks` 有 5 档规则（http/锚点/源 realRoot 绝对路径/相对路径 md/镜像仓库 `/xxx/md/codex` 兜底）。新增规则往这里加，不要在其他地方做 navigate。
+10. **learn 进度协议**：`data/learn/progress.md` 顶部 ```` ```kb-progress ```` 围栏块（YAML）是机器消费的权威源；后端 `server/lib/learn.js` 走四级 fallback 链 `structured → markdown_fallback → cache_fallback → unavailable`；缓存落 `~/.kb-dashboard/learn-progress-cache.json`（不污染笔记仓）。改解析逻辑必须保留四档降级 + warnings 透出 + 健康徽标。协议字段定义见 [data/learn/AGENTS.md](./data/learn/AGENTS.md) 的"progress.md 修改协议"小节。
 
 ## 约定 / 设计决策
 

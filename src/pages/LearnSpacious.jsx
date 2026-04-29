@@ -6,6 +6,8 @@ import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../
 import SidePanel from '../components/SidePanel.jsx';
 import CollapsibleSection from '../components/CollapsibleSection.jsx';
 import RecentList from '../components/RecentList.jsx';
+import { useContextMenu } from '../lib/useContextMenu.jsx';
+import { buildFileMenuItems } from '../lib/fileActions.js';
 import { getTree, getFile, getLearnProgress, subscribeFileEvents } from '../lib/api.js';
 import { usePrefs } from '../lib/usePrefs.js';
 
@@ -16,7 +18,158 @@ const STATUS_STYLE = {
   done: { fill: '100%', color: 'var(--src-learn)' },
   'in-progress': { fill: '55%', color: 'var(--src-learn)' },
   pending: { fill: '0%', color: 'var(--src-learn)' },
+  optional: { fill: '0%', color: 'var(--src-learn)' },
 };
+
+// ── 健康指示：徽标 + 降级横幅 ───────────────────────────────
+function formatRelTime(iso) {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const diffSec = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (diffSec < 60) return '刚刚';
+  if (diffSec < 3600) return `${Math.round(diffSec / 60)} 分钟前`;
+  if (diffSec < 86400) return `${Math.round(diffSec / 3600)} 小时前`;
+  return `${Math.round(diffSec / 86400)} 天前`;
+}
+
+function describeHealth(progress) {
+  if (!progress) return null;
+  const { health = 'ok', source = 'structured', cachedAt } = progress;
+  if (health === 'ok' && source === 'structured') {
+    return { tone: 'ok', label: '结构化', desc: 'kb-progress 协议块解析正常' };
+  }
+  if (source === 'markdown_fallback') {
+    return {
+      tone: 'warn',
+      label: '降级解析',
+      desc: 'progress.md 顶部缺少 kb-progress 围栏块，已退到旧正则解析；建议补回结构化块。',
+    };
+  }
+  if (source === 'cache_fallback') {
+    return {
+      tone: 'error',
+      label: cachedAt ? `缓存兜底 · ${formatRelTime(cachedAt)}` : '缓存兜底',
+      desc: '当前 progress.md 解析失败，正在显示上次成功的状态。请检查文件顶部的 kb-progress 块。',
+    };
+  }
+  if (source === 'unavailable') {
+    return {
+      tone: 'error',
+      label: '不可用',
+      desc: 'progress.md 解析失败且无可用缓存。请打开 progress.md，在文件顶部补回 kb-progress 围栏块。',
+    };
+  }
+  // structured + warn
+  if (health === 'warn') {
+    return {
+      tone: 'warn',
+      label: '结构化（有警告）',
+      desc: '结构化块已成功解析，但部分字段不规范，详情见下方 warnings。',
+    };
+  }
+  return { tone: 'ok', label: '结构化', desc: '' };
+}
+
+const TONE_STYLE = {
+  ok: { color: 'var(--ok)', bg: '#E8F1EB', border: '#CFE3D6' },
+  warn: { color: 'var(--warn)', bg: '#F6ECD6', border: '#E6D4A8' },
+  error: { color: 'var(--danger)', bg: '#FAE2DB', border: '#E8C4B8' },
+};
+
+function HealthBadge({ progress, onClick }) {
+  const info = describeHealth(progress);
+  if (!info) return null;
+  const s = TONE_STYLE[info.tone];
+  return (
+    <span
+      className="badge"
+      title={`${info.desc || info.label}（点击打开 progress.md）`}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      style={{
+        background: s.bg, color: s.color, borderColor: s.border,
+        fontSize: 10.5, cursor: 'pointer',
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: s.color }} />
+      {info.label}
+    </span>
+  );
+}
+
+function HealthBanner({ progress, onOpenProgressMd }) {
+  const [showDetail, setShowDetail] = useState(false);
+  if (!progress) return null;
+  const info = describeHealth(progress);
+  if (!info || info.tone === 'ok') return null;
+  const s = TONE_STYLE[info.tone];
+  const warnings = progress.warnings || [];
+  return (
+    <div
+      style={{
+        margin: '8px 32px 4px',
+        padding: '10px 14px',
+        background: s.bg,
+        border: `1px solid ${s.border}`,
+        borderRadius: 6,
+        fontSize: 12.5,
+        color: 'var(--ink)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon name="flag" size={14} color={s.color} />
+        <b style={{ color: s.color }}>progress.md 解析降级 · {info.label}</b>
+        <span style={{ flex: 1, color: 'var(--ink-sub)' }}>{info.desc}</span>
+        <button
+          className="kb-btn ghost"
+          style={{ height: 22, padding: '0 8px', fontSize: 11 }}
+          onClick={onOpenProgressMd}
+        >
+          打开 progress.md
+        </button>
+        {warnings.length > 0 && (
+          <button
+            className="kb-btn ghost"
+            style={{ height: 22, padding: '0 8px', fontSize: 11 }}
+            onClick={() => setShowDetail((v) => !v)}
+          >
+            {showDetail ? '收起' : `详情 (${warnings.length})`}
+          </button>
+        )}
+      </div>
+      {showDetail && warnings.length > 0 && (
+        <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 11.5, lineHeight: 1.6, color: 'var(--ink-sub)' }}>
+          {warnings.map((w, i) => (
+            <li key={i}>
+              <span
+                className="kb-mono"
+                style={{
+                  fontSize: 10.5,
+                  padding: '0 4px',
+                  marginRight: 6,
+                  borderRadius: 3,
+                  background: w.level === 'error' ? '#FAE2DB' : '#F6ECD6',
+                  color: w.level === 'error' ? 'var(--danger)' : 'var(--warn)',
+                }}
+              >
+                {w.level}
+              </span>
+              <span className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+                {w.code}
+              </span>
+              {w.at && (
+                <span className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', marginLeft: 6 }}>
+                  @ {w.at}
+                </span>
+              )}
+              <span style={{ marginLeft: 6 }}>{w.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // ── 折叠条（顶部单行 summary，点击展开/收起）────────────────
 function CollapsibleProgressHeader({ progress, open, onToggle, onOpenProgressMd }) {
@@ -58,6 +211,7 @@ function CollapsibleProgressHeader({ progress, open, onToggle, onOpenProgressMd 
         <span className="kb-mono" style={{ fontSize: 11, color: 'var(--src-learn)' }}>
           {progress.progressPct}%
         </span>
+        <HealthBadge progress={progress} onClick={onOpenProgressMd} />
         <span
           style={{
             fontSize: 12.5,
@@ -216,6 +370,7 @@ function Sidebar({
   onSelectFile,
 }) {
   const [filter, setFilter] = useState('');
+  const ctx = useContextMenu();
   const q = filter.trim().toLowerCase();
   const keep = (name) => !q || name.toLowerCase().includes(q);
 
@@ -228,6 +383,7 @@ function Sidebar({
         className={`tree-row ${active ? 'active-learn' : ''}`}
         style={{ padding: `3px 6px 3px ${6 + indent}px`, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}
         onClick={() => onSelectFile(e.path)}
+        onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir: false }))}
       >
         <Icon name="file" size={11} color={active ? 'var(--src-learn)' : 'var(--ink-muted)'} />
         <span style={{ flex: 1, fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -319,6 +475,7 @@ function Sidebar({
                   className={`tree-row ${on ? 'active-learn' : ''}`}
                   style={{ fontFamily: 'var(--font-mono)', padding: '4px 8px', cursor: 'pointer' }}
                   onClick={() => onSelectTopic(t.name)}
+                  onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: `review/${t.name}`, isDir: true }))}
                 >
                   <Icon name="folder" size={12} color={on ? 'var(--src-learn)' : 'var(--ink-muted)'} />
                   <span style={{ flex: 1, fontSize: 12, fontWeight: on ? 600 : 400 }}>{t.name}</span>
@@ -352,6 +509,7 @@ function Sidebar({
           </>
         )}
       </div>
+      {ctx.Element}
     </div>
   );
 }
@@ -519,15 +677,22 @@ export default function LearnSpacious() {
       .finally(() => setFileLoading(false));
   }, [selectedPath]);
 
-  // 订阅文件变更 → 当前文件 / progress.md 有变则重拉
+  // 订阅文件变更 → 当前文件 / progress.md 有变则重拉；当前文件被删则提示
   useEffect(() => {
     const unsub = subscribeFileEvents((evt) => {
       if (evt.source !== SOURCE) return;
       if (evt.path === 'progress.md') {
         getLearnProgress().then(setProgress).catch(() => {});
       }
-      if (selectedPath && evt.path === selectedPath && evt.type !== 'unlink') {
-        getFile(SOURCE, selectedPath).then(setFile).catch(() => {});
+      if (selectedPath && evt.path === selectedPath) {
+        if (evt.type === 'unlink') {
+          setFile(null);
+          setFileError('该文件已被外部删除或移走');
+        } else {
+          getFile(SOURCE, selectedPath)
+            .then((f) => { setFile(f); setFileError(null); })
+            .catch(() => {});
+        }
       }
     });
     return unsub;
@@ -566,6 +731,7 @@ export default function LearnSpacious() {
             onToggle={() => setProgressOpen((o) => !o)}
             onOpenProgressMd={openProgressMd}
           />
+          <HealthBanner progress={progress} onOpenProgressMd={openProgressMd} />
 
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             {progressError && !selectedPath ? (
@@ -612,6 +778,7 @@ export default function LearnSpacious() {
                 currentPath={selectedPath}
                 onSelect={setSelectedPath}
                 accent="var(--src-learn)"
+                source="learn"
               />
             </CollapsibleSection>
             <CollapsibleSection
