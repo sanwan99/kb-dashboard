@@ -1,11 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 import { Icon } from './primitives.jsx';
 import { usePrefs } from '../lib/usePrefs.js';
 import { useTheme } from '../lib/useTheme.js';
 import { getCachedSources } from '../lib/api.js';
+
+// 滚动位置记忆：URL（pathname + search）→ scrollTop
+// MarkdownView 切换文件时会被父组件 unmount/remount，所以用模块级 Map 跨实例存
+const scrollMemory = new Map();
 
 function slugify(text) {
   return (text || '')
@@ -333,6 +337,8 @@ async function enhanceRendered(container, { renderMermaid = true, onRequestZoom 
 export function MarkdownView({ path, file, badge, onToc }) {
   const mdRef = useRef(null);
   const scrollRef = useRef(null);
+  // 标记"我们正在程序性写 scrollTop"（避免恢复 → 被 clamp → scroll 事件 → 覆盖 saved）
+  const isRestoringRef = useRef(false);
   const [toc, setToc] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [sources, setSources] = useState([]);
@@ -340,10 +346,32 @@ export function MarkdownView({ path, file, badge, onToc }) {
   const prefs = usePrefs();
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const urlKey = `${location.pathname}${location.search}`;
 
   useEffect(() => {
     getCachedSources().then(setSources).catch(() => setSources([]));
   }, []);
+
+  // 滚动位置记忆：滚动时持续存，unmount/URL 切换时再保一次
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      // 关键：忽略程序性滚动（restore 写 scrollTop 也会触发 scroll 事件，
+      // 浏览器对超出 docHeight 的值会 clamp，否则会把 clamp 后的值覆盖回 saved）
+      if (isRestoringRef.current) return;
+      scrollMemory.set(urlKey, container.scrollTop);
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      // 卸载或 URL 切换前快照最后位置；恢复进行中跳过，避免 clamp 值污染 saved
+      if (!isRestoringRef.current) {
+        scrollMemory.set(urlKey, container.scrollTop);
+      }
+      container.removeEventListener('scroll', onScroll);
+    };
+  }, [urlKey]);
 
   const segments = path.split('/');
   const dirParts = segments.slice(0, -1);
@@ -381,6 +409,75 @@ export function MarkdownView({ path, file, badge, onToc }) {
     setToc(items);
     setActiveId(items[0]?.id || null);
   }, [file?.html, prefs.behavior.renderMermaid, sources, resolvedTheme]);
+
+  // 恢复滚动位置：必须在 innerHTML 注入之后跑，所以独立成一个依赖 file.html 的 useEffect。
+  // 放在 html-setting effect 之后声明，保证 effect 执行顺序在它之后。
+  // 内容（mermaid / 图片）异步加载会让 docHeight 晚才长全。策略：
+  // 1. 写 scrollTop 时打开 isRestoringRef，让 save listener 忽略 clamp 后的 scroll 事件
+  // 2. ResizeObserver 监听内容尺寸 + 100ms 兜底轮询，直到 scrollTop 真的落到 saved
+  // 3. 8 秒兜底超时
+  useEffect(() => {
+    const container = scrollRef.current;
+    const content = mdRef.current;
+    if (!container) return;
+    const saved = scrollMemory.get(urlKey);
+    if (typeof saved !== 'number') {
+      isRestoringRef.current = true;
+      container.scrollTop = 0;
+      // 释放 flag 留两帧，让因为这次写而触发的 scroll 事件先消化
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        isRestoringRef.current = false;
+      }));
+      return;
+    }
+
+    let done = false;
+    let observer = null;
+    let pollInterval = null;
+
+    const tryRestore = () => {
+      if (done) return;
+      isRestoringRef.current = true;
+      container.scrollTop = saved;
+      if (Math.abs(container.scrollTop - saved) <= 4) {
+        done = true;
+        observer && observer.disconnect();
+        pollInterval && clearInterval(pollInterval);
+      }
+      // scroll 事件异步派发，留两帧再释放 flag，避免被自己写的 scroll 反向覆盖 saved
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        isRestoringRef.current = false;
+      }));
+    };
+
+    tryRestore();
+    if (done) return;
+
+    // 文档还没长全：双管齐下
+    // (a) ResizeObserver：内容尺寸变化时立刻重试
+    if (typeof ResizeObserver !== 'undefined' && content) {
+      observer = new ResizeObserver(tryRestore);
+      observer.observe(content);
+    }
+    // (b) 100ms 轮询：兜底（图片懒加载、字体加载等不一定触发 RO）
+    pollInterval = setInterval(tryRestore, 100);
+
+    // 8 秒超时
+    const timer = setTimeout(() => {
+      done = true;
+      observer && observer.disconnect();
+      clearInterval(pollInterval);
+      isRestoringRef.current = false;
+    }, 8000);
+
+    return () => {
+      done = true;
+      clearTimeout(timer);
+      clearInterval(pollInterval);
+      observer && observer.disconnect();
+      isRestoringRef.current = false;
+    };
+  }, [urlKey, file?.html]);
 
   // 滚动时高亮当前小节
   useEffect(() => {
