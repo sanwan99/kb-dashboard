@@ -7,7 +7,9 @@ const SOURCE_META = {
   learn: { color: 'var(--src-learn)', label: '学习', icon: 'flag' },
   obsidian: { color: 'var(--src-obsidian)', label: 'Obsidian', icon: 'graph' },
   work: { color: 'var(--src-work)', label: '公司', icon: 'git' },
+  custom: { color: 'var(--src-custom)', label: '自定义', icon: 'folder-open' },
 };
+const FALLBACK_META = { color: 'var(--ink-muted)', label: '未知', icon: 'file' };
 
 function stripMark(html) {
   return html.replace(/<\/?mark>/g, '');
@@ -132,7 +134,7 @@ export default function GlobalSearchBar() {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="搜索笔记…  跨三源全文检索"
+          placeholder="搜索笔记…  跨全部来源全文检索"
           style={{
             flex: 1,
             border: 0,
@@ -209,7 +211,7 @@ export default function GlobalSearchBar() {
               </div>
 
               {hits.map((h, i) => {
-                const meta = SOURCE_META[h.source];
+                const meta = SOURCE_META[h.source] || FALLBACK_META;
                 const active = i === activeIdx;
                 return (
                   <button

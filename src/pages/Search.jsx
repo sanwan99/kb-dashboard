@@ -7,6 +7,7 @@ const SOURCE_LABELS = {
   learn: { label: '学习项目', kind: '学习' },
   obsidian: { label: 'Obsidian', kind: 'Obsidian' },
   work: { label: '公司项目', kind: '公司' },
+  custom: { label: '自定义来源', kind: '自定义' },
 };
 
 // 跳转路由：打开搜索结果对应的页面并定位到文件
@@ -15,6 +16,7 @@ function resultLink(source, path) {
   if (source === 'obsidian') return `/obsidian?${q}`;
   if (source === 'work') return `/work?${q}`;
   if (source === 'learn') return `/learn?${q}`;
+  if (source === 'custom') return `/custom?${q}`;
   return '/';
 }
 
@@ -57,7 +59,7 @@ function HitCard({ hit }) {
 export default function Search() {
   const [sp] = useSearchParams();
   const [q, setQ] = useState(sp.get('q') || '');
-  const [enabledSources, setEnabledSources] = useState({ learn: true, obsidian: true, work: true });
+  const [enabledSources, setEnabledSources] = useState({ learn: true, obsidian: true, work: true, custom: true });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -123,11 +125,12 @@ export default function Search() {
   };
 
   const groupedCounts = useMemo(() => {
-    if (!data) return { learn: 0, obsidian: 0, work: 0 };
+    if (!data) return { learn: 0, obsidian: 0, work: 0, custom: 0 };
     return {
       learn: data.grouped?.learn?.length ?? 0,
       obsidian: data.grouped?.obsidian?.length ?? 0,
       work: data.grouped?.work?.length ?? 0,
+      custom: data.grouped?.custom?.length ?? 0,
     };
   }, [data]);
 
@@ -207,7 +210,7 @@ export default function Search() {
                 ref={inputRef}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="搜索三源…（英文 / 中文都支持）"
+                placeholder="搜索全部来源…（英文 / 中文都支持）"
                 style={{
                   flex: 1,
                   border: 0,
@@ -241,6 +244,7 @@ export default function Search() {
                     <span><span className="src-dot learn" /> 学习 <b>{groupedCounts.learn}</b></span>
                     <span><span className="src-dot obsidian" /> Obsidian <b>{groupedCounts.obsidian}</b></span>
                     <span><span className="src-dot work" /> 公司 <b>{groupedCounts.work}</b></span>
+                    <span><span className="src-dot custom" /> 自定义 <b>{groupedCounts.custom}</b></span>
                   </>
                 ) : null}
               </div>
@@ -278,7 +282,7 @@ export default function Search() {
             {!q && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--ink-muted)', flexDirection: 'column', gap: 8 }}>
                 <Icon name="search" size={24} color="var(--ink-muted)" />
-                <div style={{ fontSize: 13 }}>在上方输入关键词跨三源搜索</div>
+                <div style={{ fontSize: 13 }}>在上方输入关键词跨全部来源搜索</div>
                 <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>索引中 {stats?.docCount ?? '…'} 篇 md</div>
               </div>
             )}
