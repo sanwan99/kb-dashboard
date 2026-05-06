@@ -302,14 +302,22 @@ async function enhanceRendered(container, { renderMermaid = true, onRequestZoom 
     const mermaid = await loadMermaid();
     // 每次渲染前用最新 CSS 变量初始化，跟随 light/dark 主题
     mermaid.initialize(computeMermaidConfig());
+    // 清扫上一次渲染遗留在 body 上的 stray 临时元素（mermaid 失败时会留下"Syntax error in text"占位 SVG）
+    document.querySelectorAll('body > [id^="mermaid-"], body > [id^="dmermaid-"]').forEach((n) => n.remove());
+
     let idx = 0;
     for (const el of mermaidBlocks) {
       if (el.dataset.mermaidDone === '1') continue;
       const src = el.textContent;
       const wrapper = document.createElement('div');
       wrapper.className = 'md-mermaid';
+      const renderId = `mermaid-${Date.now()}-${idx++}`;
+      // 提供一个 hidden 临时容器给 mermaid.render，避免它把临时元素塞到 body 末尾
+      const tempHost = document.createElement('div');
+      tempHost.style.cssText = 'position:absolute;left:-99999px;top:-99999px;width:0;height:0;overflow:hidden;visibility:hidden;';
+      document.body.appendChild(tempHost);
       try {
-        const { svg } = await mermaid.render(`mermaid-${Date.now()}-${idx++}`, src);
+        const { svg } = await mermaid.render(renderId, src, tempHost);
         wrapper.innerHTML = svg;
         wrapper.title = '双击放大';
         wrapper.style.cursor = 'zoom-in';
@@ -319,6 +327,11 @@ async function enhanceRendered(container, { renderMermaid = true, onRequestZoom 
         });
       } catch (err) {
         wrapper.innerHTML = `<div class="md-mermaid-error">Mermaid 渲染失败: ${String(err.message || err)}</div><pre><code>${src.replace(/</g, '&lt;')}</code></pre>`;
+      } finally {
+        // 清理临时容器 + 兜底清理 body 上同 id 的 stray
+        tempHost.remove();
+        document.getElementById(renderId)?.remove();
+        document.getElementById('d' + renderId)?.remove();
       }
       el.parentElement?.replaceWith(wrapper);
       el.dataset.mermaidDone = '1';
