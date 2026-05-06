@@ -1,7 +1,7 @@
 // Electron 主进程（CommonJS）
 // dev：加载 Vite dev server，由 `npm run dev` 并发起后端
 // prod：loadFile dist + 主进程内启动 Fastify（in-process）
-const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -115,6 +115,18 @@ function createWindow() {
     }
   });
 }
+
+// IPC：自定义来源 - 选目录（Electron 模式下走原生 dialog）
+ipcMain.handle('dialog:select-directory', async (_evt, opts = {}) => {
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  const r = await dialog.showOpenDialog(win, {
+    title: opts.title || '选择目录',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: opts.defaultPath || os.homedir(),
+  });
+  if (r.canceled || !r.filePaths?.length) return { canceled: true };
+  return { canceled: false, path: r.filePaths[0] };
+});
 
 app.whenReady().then(async () => {
   buildMenu();

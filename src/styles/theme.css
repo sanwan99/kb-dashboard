@@ -31,6 +31,8 @@ html, body, #root {
   --src-obsidian-bg: #EDE8F7;
   --src-work: #C77A35;      /* warm orange */
   --src-work-bg: #F7ECDC;
+  --src-custom: #4A8B5E;    /* sage green */
+  --src-custom-bg: #E4F0E7;
 
   /* Status */
   --ok: #3E8E5E;
@@ -66,6 +68,8 @@ html, body, #root {
   --src-obsidian-bg: rgba(122,90,184,0.18);
   --src-work: #e0a163;
   --src-work-bg: rgba(199,122,53,0.18);
+  --src-custom: #6fb087;
+  --src-custom-bg: rgba(74,139,94,0.2);
 
   --ok: #6bb583;
   --warn: #d6a85a;
@@ -75,6 +79,7 @@ html, body, #root {
 [data-theme="dark"] .src-pill.learn { border-color: rgba(107,149,214,0.3); }
 [data-theme="dark"] .src-pill.obsidian { border-color: rgba(166,136,232,0.3); }
 [data-theme="dark"] .src-pill.work { border-color: rgba(224,161,99,0.3); }
+[data-theme="dark"] .src-pill.custom { border-color: rgba(111,176,135,0.3); }
 [data-theme="dark"] .md pre { background: #0f0d0b !important; color: #d8d2c4 !important; }
 [data-theme="dark"] .md code { background: #1f1d1a; border-color: #332f29; }
 [data-theme="dark"] .md a { color: var(--src-learn); border-bottom-color: rgba(107,149,214,0.25); }
@@ -98,6 +103,7 @@ html, body, #root {
 .src-dot.learn { background: var(--src-learn); }
 .src-dot.obsidian { background: var(--src-obsidian); }
 .src-dot.work { background: var(--src-work); }
+.src-dot.custom { background: var(--src-custom); }
 
 .src-pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -108,6 +114,7 @@ html, body, #root {
 .src-pill.learn { color: var(--src-learn); background: var(--src-learn-bg); border-color: #D8E3F5; }
 .src-pill.obsidian { color: var(--src-obsidian); background: var(--src-obsidian-bg); border-color: #DFD5F0; }
 .src-pill.work { color: var(--src-work); background: var(--src-work-bg); border-color: #ECD9BF; }
+.src-pill.custom { color: var(--src-custom); background: var(--src-custom-bg); border-color: #C9DFCE; }
 
 .kb-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -178,6 +185,7 @@ html, body, #root {
 .tree-row.active { background: var(--src-obsidian-bg); color: var(--src-obsidian); font-weight: 500; }
 .tree-row.active-learn { background: var(--src-learn-bg); color: var(--src-learn); font-weight: 500; }
 .tree-row.active-work { background: var(--src-work-bg); color: var(--src-work); font-weight: 500; }
+.tree-row.active-custom { background: var(--src-custom-bg); color: var(--src-custom); font-weight: 500; }
 
 /* Chrome for in-app window */
 .kb-window {

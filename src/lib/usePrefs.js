@@ -5,7 +5,7 @@ const STORAGE_KEY = 'kb-prefs';
 const DEFAULTS = {
   density: 'standard', // 'breathe' | 'standard' | 'compact'
   fontSize: 15,        // 12-20
-  sources: { learn: true, obsidian: true, work: true },
+  sources: { learn: true, obsidian: true, work: true, custom: true },
   behavior: {
     restoreLastFile: true,
     openBreakpointOnLearn: false,

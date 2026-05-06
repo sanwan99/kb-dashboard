@@ -13,7 +13,15 @@ import { parseProgress } from './lib/learn.js';
 import { buildHomeOverview, listRecent } from './lib/stats.js';
 import { buildSearchIndex, searchIndex, searchStats } from './lib/search.js';
 import { buildObsidianIndex, getBacklinks, getNeighbors, getAllTags, obsidianStats } from './lib/obsidian-index.js';
-import { startWatchers, subscribe, setRebuildHandler } from './lib/watcher.js';
+import { startWatchers, subscribe, setRebuildHandler, addMountWatch, removeMountWatch } from './lib/watcher.js';
+import {
+  listMounts as listCustomMounts,
+  addMount as addCustomMount,
+  removeMount as removeCustomMount,
+  renameMount as renameCustomMount,
+  reorderMounts as reorderCustomMounts,
+  getMount as getCustomMount,
+} from './lib/custom-sources.js';
 import { guessMime, IMAGE_EXTS } from './lib/mime.js';
 
 const PORT = Number(process.env.PORT || 5174);
@@ -23,10 +31,27 @@ const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: true });
 
-// GET /api/sources — 三个源的元信息
+// GET /api/sources — 内置三源 + custom 源元信息
 app.get('/api/sources', async () => {
   const out = [];
   for (const s of SOURCES) {
+    if (s.multi) {
+      const mounts = listCustomMounts();
+      out.push({
+        id: s.id,
+        kind: s.kind,
+        label: s.label,
+        color: s.color,
+        root: s.root,
+        realRoot: s.realRoot,
+        displayPath: s.displayPath,
+        multi: true,
+        mounts,
+        exists: mounts.length > 0,
+        fileCount: null,
+      });
+      continue;
+    }
     let exists = true;
     try {
       await fs.access(s.root);
@@ -41,6 +66,7 @@ app.get('/api/sources', async () => {
       root: s.root,
       realRoot: s.realRoot,
       displayPath: s.displayPath,
+      multi: false,
       exists,
       fileCount: null,
     });
@@ -48,11 +74,74 @@ app.get('/api/sources', async () => {
   return { sources: out };
 });
 
+// ── custom-sources 管理 ────────────────────────────────────────
+// 所有写操作只动 ~/.kb-dashboard/custom-sources.json，不写挂载点目录本身。
+
+app.get('/api/custom-sources', async () => ({ items: listCustomMounts() }));
+
+app.post('/api/custom-sources', async (req, reply) => {
+  const body = req.body || {};
+  try {
+    const mount = addCustomMount(body);
+    addMountWatch?.(mount, app.log);
+    // 异步重建搜索索引（让用户立即看到挂载，搜索几秒后跟进）
+    buildSearchIndex(app.log).catch((err) => app.log.warn({ err }, 'rebuild after add failed'));
+    return mount;
+  } catch (err) {
+    return reply.code(err.statusCode || 400).send({ error: err.message });
+  }
+});
+
+app.patch('/api/custom-sources/:id', async (req, reply) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  try {
+    if (body.order !== undefined) {
+      // 整体重排：body.order 是 id 数组
+      const items = reorderCustomMounts(body.order);
+      return { items };
+    }
+    if (body.name !== undefined) {
+      const mount = renameCustomMount(id, body.name);
+      if (!mount) return reply.code(404).send({ error: '挂载点不存在' });
+      return mount;
+    }
+    return reply.code(400).send({ error: '需要提供 name 或 order 字段' });
+  } catch (err) {
+    return reply.code(err.statusCode || 400).send({ error: err.message });
+  }
+});
+
+app.delete('/api/custom-sources/:id', async (req, reply) => {
+  const { id } = req.params;
+  const ok = removeCustomMount(id);
+  if (!ok) return reply.code(404).send({ error: '挂载点不存在' });
+  removeMountWatch?.(id, app.log);
+  buildSearchIndex(app.log).catch((err) => app.log.warn({ err }, 'rebuild after remove failed'));
+  return { ok: true, id };
+});
+
 // GET /api/tree?source=...&path=... — 单级目录列表（点开再发下一级）
+// custom 源 path='' 时返回挂载列表（虚拟根）；path='<mountId>/...' 走真实 fs。
 app.get('/api/tree', async (req, reply) => {
   const { source, path: p = '' } = req.query;
   if (!source) return reply.code(400).send({ error: 'source required' });
   try {
+    if (source === 'custom' && (!p || p === '/')) {
+      const mounts = listCustomMounts();
+      const entries = mounts.map((m) => ({
+        name: m.name,
+        type: 'dir',
+        path: m.id,
+        size: null,
+        mtime: m.addedAt || null,
+        ext: null,
+        mountId: m.id,
+        available: m.available,
+        realRoot: m.realRoot,
+      }));
+      return { source, path: '', entries, mounts: true };
+    }
     const { abs, rel } = safeResolve(source, p);
     const stat = await fs.stat(abs);
     if (!stat.isDirectory()) {
@@ -246,7 +335,7 @@ app.get('/api/recent', async (req, reply) => {
 app.get('/api/search', async (req) => {
   const { q, source, limit } = req.query;
   if (!q || String(q).trim() === '') {
-    return { results: [], total: 0, grouped: { learn: [], obsidian: [], work: [] }, ...searchStats(), took: 0 };
+    return { results: [], total: 0, grouped: { learn: [], obsidian: [], work: [], custom: [] }, ...searchStats(), took: 0 };
   }
   const sources = source ? String(source).split(',').map((s) => s.trim()).filter(Boolean) : [];
   const t0 = Date.now();

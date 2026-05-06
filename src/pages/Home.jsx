@@ -60,6 +60,7 @@ export default function Home() {
   const progress = learn?.progress;
   const obsidianFolderMap = Object.fromEntries((overview?.obsidian?.folders || []).map((f) => [f.name, f]));
   const workProjects = overview?.work?.projects || [];
+  const customMounts = overview?.custom?.mounts || [];
 
   const currentStageName =
     progress && progress.currentIndex != null
@@ -78,7 +79,7 @@ export default function Home() {
             <div style={{ color: 'var(--ink-sub)', fontSize: 13.5, marginTop: 4 }}>
               {g ? (
                 <>
-                  三个笔记仓，共 <b>{g.totalFiles}</b> 个 md 文件 · 最近 7 天编辑 <b>{g.editedRecent}</b> 篇
+                  全部来源共 <b>{g.totalFiles}</b> 个 md 文件 · 最近 7 天编辑 <b>{g.editedRecent}</b> 篇
                   {progress?.streak != null && (
                     <span> · 学习连续 <b style={{ color: 'var(--src-learn)' }}>{progress.streak}</b> 天</span>
                   )}
@@ -334,6 +335,96 @@ export default function Home() {
             </Link>
           ))}
         </div>
+
+        {/* ── Band 4: 自定义来源 ──────────────────── */}
+        <SectionHeader
+          source="custom"
+          title="自定义来源"
+          subtitle={
+            overview?.custom
+              ? `${overview.custom.mountCount} 个目录 · ${overview.custom.fileCount} 个 md${overview.custom.latestMtime ? ` · 最近 ${relTime(overview.custom.latestMtime)}` : ''}`
+              : '加载中…'
+          }
+          right={
+            <Link to="/custom" className="kb-btn ghost" style={{ fontSize: 12, textDecoration: 'none', color: 'var(--src-custom)' }}>
+              <Icon name="folder-open" size={12} /> 管理
+            </Link>
+          }
+        />
+        {customMounts.length === 0 ? (
+          <Link
+            to="/custom"
+            className="kb-card"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: 18,
+              marginTop: 4,
+              textDecoration: 'none',
+              color: 'inherit',
+              borderStyle: 'dashed',
+            }}
+          >
+            <div
+              style={{
+                width: 32, height: 32, borderRadius: 8,
+                background: 'var(--src-custom-bg)', color: 'var(--src-custom)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Icon name="folder-open" size={16} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 600 }}>还没有引入任何目录</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-sub)', marginTop: 2 }}>
+                点这里去自定义来源页面，添加一个本地目录就能在看板里浏览/搜索它的 md 了。
+              </div>
+            </div>
+            <Icon name="arrow-r" size={14} color="var(--ink-muted)" />
+          </Link>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+            {customMounts.map((m) => (
+              <Link
+                key={m.id}
+                to="/custom"
+                className="kb-card"
+                style={{
+                  padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+                  textDecoration: 'none', color: 'inherit',
+                  opacity: m.available ? 1 : 0.55,
+                }}
+                title={m.realRoot}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--src-custom-bg)', color: 'var(--src-custom)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="folder-open" size={13} />
+                  </div>
+                  <span
+                    className="kb-mono"
+                    style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  >
+                    {m.name}
+                  </span>
+                  {!m.available && (
+                    <span style={{ fontSize: 10, color: 'var(--danger)' }}>不可用</span>
+                  )}
+                </div>
+                <div
+                  className="kb-mono"
+                  style={{ fontSize: 11, color: 'var(--ink-muted)', lineHeight: 1.5, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {m.realRoot}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-muted)', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                  <span>{m.fileCount} md</span>
+                  <span>{m.latestMtime ? relTime(m.latestMtime) : '—'}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </Frame>
   );

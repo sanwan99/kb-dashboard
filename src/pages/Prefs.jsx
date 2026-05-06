@@ -12,6 +12,7 @@ const SOURCE_META = [
   { id: 'learn', label: '学习项目', path: '~/Desktop/文档/个人学习项目/' },
   { id: 'obsidian', label: 'Obsidian 知识库', path: '~/Desktop/文档/个人知识库/' },
   { id: 'work', label: '公司项目笔记', path: '~/work/code/sanwan/notes/' },
+  { id: 'custom', label: '自定义来源', path: '~/.kb-dashboard/custom-sources.json' },
 ];
 
 const BEHAVIOR_OPTIONS = [

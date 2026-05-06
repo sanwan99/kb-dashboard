@@ -2,6 +2,7 @@ import fg from 'fast-glob';
 import path from 'node:path';
 import { SOURCES, SOURCES_BY_ID } from './sources.js';
 import { parseProgress } from './learn.js';
+import { listMounts } from './custom-sources.js';
 
 const GLOB_PATTERNS = ['**/*.md', '**/*.markdown'];
 const GLOB_IGNORE = [
@@ -17,24 +18,51 @@ const GLOB_IGNORE = [
   '**/*_副本/**',
 ];
 
-// 扫描一个源下所有 md（含 stat）
+// 扫描一个源下所有 md（含 stat）。
+// custom 源：遍历所有可用挂载点，path 字段拼 mountId 前缀。
 async function scanMd(sourceId) {
   const src = SOURCES_BY_ID[sourceId];
-  const entries = await fg(GLOB_PATTERNS, {
-    cwd: src.root,
-    ignore: GLOB_IGNORE,
-    stats: true,
-    followSymbolicLinks: true,
-    onlyFiles: true,
-    suppressErrors: true, // 权限问题等不崩
-  });
-  // fast-glob stats:true 返回 { name, path, stats: { size, mtimeMs, ... } }
-  return entries.map((e) => ({
-    name: e.name,
-    path: e.path, // 相对 cwd
-    size: e.stats.size,
-    mtime: new Date(e.stats.mtimeMs),
-  }));
+  if (!src) return [];
+
+  const targets = [];
+  if (src.multi) {
+    for (const m of listMounts()) {
+      if (!m.available) continue;
+      targets.push({ cwd: m.realRoot, prefix: m.id, mountId: m.id });
+    }
+  } else {
+    targets.push({ cwd: src.root, prefix: '', mountId: null });
+  }
+
+  const out = [];
+  for (const t of targets) {
+    let entries;
+    try {
+      entries = await fg(GLOB_PATTERNS, {
+        cwd: t.cwd,
+        ignore: GLOB_IGNORE,
+        stats: true,
+        followSymbolicLinks: true,
+        onlyFiles: true,
+        suppressErrors: true,
+      });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const relPath = t.prefix
+        ? path.posix.join(t.prefix, e.path.split(path.sep).join('/'))
+        : e.path;
+      out.push({
+        name: e.name,
+        path: relPath,
+        size: e.stats.size,
+        mtime: new Date(e.stats.mtimeMs),
+        mountId: t.mountId,
+      });
+    }
+  }
+  return out;
 }
 
 const latest = (files) =>
@@ -96,15 +124,38 @@ function groupByProject(files) {
     .sort((a, b) => b.activeTaskCount - a.activeTaskCount || a.name.localeCompare(b.name, 'zh-CN'));
 }
 
+// custom：按挂载点分组
+function groupByMount(files, mounts) {
+  const map = new Map(mounts.map((m) => [m.id, []]));
+  for (const f of files) {
+    if (!f.mountId) continue;
+    if (!map.has(f.mountId)) map.set(f.mountId, []);
+    map.get(f.mountId).push(f);
+  }
+  return mounts.map((m) => {
+    const fs = map.get(m.id) || [];
+    return {
+      id: m.id,
+      name: m.name,
+      realRoot: m.realRoot,
+      available: m.available,
+      fileCount: fs.length,
+      latestMtime: latest(fs),
+    };
+  });
+}
+
 // 聚合首页数据
 export async function buildHomeOverview() {
-  const [learnFiles, obsidianFiles, workFiles] = await Promise.all([
+  const [learnFiles, obsidianFiles, workFiles, customFiles] = await Promise.all([
     scanMd('learn'),
     scanMd('obsidian'),
     scanMd('work'),
+    scanMd('custom'),
   ]);
+  const customMounts = listMounts();
 
-  const all = [...learnFiles, ...obsidianFiles, ...workFiles];
+  const all = [...learnFiles, ...obsidianFiles, ...workFiles, ...customFiles];
   const now = Date.now();
   const editedRecent = all.filter((f) => now - f.mtime.getTime() < SEVEN_DAYS_MS).length;
 
@@ -158,6 +209,12 @@ export async function buildHomeOverview() {
       fileCount: workFiles.length,
       latestMtime: latest(workFiles),
       projects: groupByProject(workFiles),
+    },
+    custom: {
+      mountCount: customMounts.length,
+      fileCount: customFiles.length,
+      latestMtime: latest(customFiles),
+      mounts: groupByMount(customFiles, customMounts),
     },
   };
 }

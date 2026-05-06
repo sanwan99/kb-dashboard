@@ -85,8 +85,10 @@ export const SourcePill = ({ source }) => {
     learn: { label: '学习项目', cls: 'learn' },
     obsidian: { label: 'Obsidian', cls: 'obsidian' },
     work: { label: '公司项目', cls: 'work' },
+    custom: { label: '自定义来源', cls: 'custom' },
   };
   const m = map[source];
+  if (!m) return null;
   return (
     <span className={`src-pill ${m.cls}`}>
       <span className={`src-dot ${m.cls}`} />
@@ -102,6 +104,7 @@ const NAV_ITEMS = [
   { id: 'learn', to: '/learn', label: '学习项目', icon: 'flag' },
   { id: 'obsidian', to: '/obsidian', label: 'Obsidian', icon: 'graph' },
   { id: 'work', to: '/work', label: '公司笔记', icon: 'terminal' },
+  { id: 'custom', to: '/custom', label: '自定义', icon: 'folder-open' },
 ];
 
 export const TopBar = () => {
@@ -180,6 +183,7 @@ export const VaultCard = ({ source, title, path, files, updated, summary, extra 
     learn: { accent: 'var(--src-learn)', bg: 'var(--src-learn-bg)', icon: 'flag' },
     obsidian: { accent: 'var(--src-obsidian)', bg: 'var(--src-obsidian-bg)', icon: 'graph' },
     work: { accent: 'var(--src-work)', bg: 'var(--src-work-bg)', icon: 'terminal' },
+    custom: { accent: 'var(--src-custom)', bg: 'var(--src-custom-bg)', icon: 'folder-open' },
   };
   const s = srcMap[source];
   return (

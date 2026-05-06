@@ -2,6 +2,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { resolveCustomPath } from './custom-sources.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
 
@@ -22,13 +24,28 @@ function buildSource(id, kind, label, color, displayPath) {
     root,
     realRoot: safeRealpath(root) || root,
     displayPath,
+    multi: false,
   };
 }
+
+// custom 源：第 4 源，内部多挂载点。root/realRoot 是虚拟占位，仅用于 SOURCES 表统一性。
+const CUSTOM_VIRTUAL_ROOT = path.join(DATA_DIR, '__custom__');
+const customSource = {
+  id: 'custom',
+  kind: 'custom',
+  label: '自定义来源',
+  color: '#4A8B5E',
+  root: CUSTOM_VIRTUAL_ROOT,
+  realRoot: CUSTOM_VIRTUAL_ROOT,
+  displayPath: '~/.kb-dashboard/custom-sources.json',
+  multi: true,
+};
 
 export const SOURCES = [
   buildSource('learn', 'learn', '学习项目', '#3766B8', '~/Desktop/文档/个人学习项目/'),
   buildSource('obsidian', 'obsidian', 'Obsidian 知识库', '#7A5AB8', '~/Desktop/文档/个人知识库/'),
   buildSource('work', 'work', '公司项目笔记', '#C77A35', '~/work/code/sanwan/notes/'),
+  customSource,
 ];
 
 export const SOURCES_BY_ID = Object.fromEntries(SOURCES.map((s) => [s.id, s]));
@@ -49,12 +66,23 @@ export const DEFAULT_IGNORE = [
 ];
 
 // 路径安全：防止 `path=..` 之类穿透出源根
+// custom 源走多挂载点解析（path 第一段为 mountId）。
 export function safeResolve(sourceId, rel = '') {
   const src = SOURCES_BY_ID[sourceId];
   if (!src) {
     const err = new Error(`unknown source: ${sourceId}`);
     err.statusCode = 400;
     throw err;
+  }
+  if (src.multi) {
+    const normalized = String(rel || '').replace(/^[/\\]+/, '');
+    if (!normalized) {
+      const err = new Error('custom 源访问需要 path 指定挂载点（mountId/...）');
+      err.statusCode = 400;
+      throw err;
+    }
+    const r = resolveCustomPath(normalized);
+    return { source: src, abs: r.abs, rel: normalized, mount: r.mount };
   }
   const normalizedRel = rel.replace(/^[/\\]+/, '');
   const abs = path.resolve(src.root, normalizedRel);

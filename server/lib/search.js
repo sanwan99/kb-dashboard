@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import fg from 'fast-glob';
 import { SOURCES } from './sources.js';
+import { listMounts } from './custom-sources.js';
 
 const GLOB_PATTERNS = ['**/*.md', '**/*.markdown'];
 const GLOB_IGNORE = [
@@ -50,11 +51,22 @@ export async function buildSearchIndex(log) {
   });
   const nextDocs = new Map();
 
+  // 扫描目标 = 内置三源 + custom 各挂载点（每个挂载点独立 fast-glob）
+  const targets = [];
   for (const src of SOURCES) {
+    if (src.multi) continue;
+    targets.push({ sourceId: src.id, cwd: src.root, prefix: '' });
+  }
+  for (const m of listMounts()) {
+    if (!m.available) continue;
+    targets.push({ sourceId: 'custom', cwd: m.realRoot, prefix: m.id });
+  }
+
+  for (const t of targets) {
     let files;
     try {
       files = await fg(GLOB_PATTERNS, {
-        cwd: src.root,
+        cwd: t.cwd,
         ignore: GLOB_IGNORE,
         stats: true,
         followSymbolicLinks: true,
@@ -62,11 +74,11 @@ export async function buildSearchIndex(log) {
         suppressErrors: true,
       });
     } catch (err) {
-      log?.warn({ err, source: src.id }, 'scan failed');
+      log?.warn({ err, source: t.sourceId, cwd: t.cwd }, 'scan failed');
       continue;
     }
     for (const f of files) {
-      const abs = path.join(src.root, f.path);
+      const abs = path.join(t.cwd, f.path);
       let content = '';
       try {
         content = await fs.readFile(abs, 'utf8');
@@ -74,11 +86,13 @@ export async function buildSearchIndex(log) {
         continue;
       }
       const title = path.basename(f.path, path.extname(f.path));
-      const id = `${src.id}::${f.path}`;
+      // custom 源：path 字段加 mountId 前缀，让前端 /api/file?source=custom&path=<mountId>/... 直接可用
+      const docPath = t.prefix ? path.posix.join(t.prefix, f.path.split(path.sep).join('/')) : f.path;
+      const id = `${t.sourceId}::${docPath}`;
       const doc = {
         id,
-        source: src.id,
-        path: f.path,
+        source: t.sourceId,
+        path: docPath,
         title,
         content,
         size: f.stats.size,
@@ -126,7 +140,7 @@ function buildSnippet(content, query, len = 160) {
 }
 
 export function searchIndex(query, opts = {}) {
-  if (!index) return { results: [], total: 0, grouped: { learn: [], obsidian: [], work: [] }, ready: false };
+  if (!index) return { results: [], total: 0, grouped: { learn: [], obsidian: [], work: [], custom: [] }, ready: false };
   const raw = index.search(query);
   const sources = opts.sources?.length ? opts.sources : null;
   const filtered = sources ? raw.filter((r) => sources.includes(r.source)) : raw;
@@ -143,7 +157,7 @@ export function searchIndex(query, opts = {}) {
       snippet: buildSnippet(d?.content || '', query),
     };
   });
-  const grouped = { learn: [], obsidian: [], work: [] };
+  const grouped = { learn: [], obsidian: [], work: [], custom: [] };
   for (const h of hits) (grouped[h.source] ||= []).push(h);
   return {
     results: hits,
