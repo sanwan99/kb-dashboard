@@ -14,8 +14,13 @@ async function request(url) {
 }
 
 async function jsonRequest(method, url, body) {
-  const init = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body !== undefined) init.body = JSON.stringify(body);
+  // Content-Type: application/json 只在真的带 body 时才设。否则 Fastify 会按 JSON
+  // 去 parse 空 body → "Unexpected end of JSON input" → 400 Bad Request（DELETE 场景踩过）。
+  const init = { method, headers: {} };
+  if (body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
   const r = await fetch(apiUrl(url), init);
   if (!r.ok) {
     let msg = '';
