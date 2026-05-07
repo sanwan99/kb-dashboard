@@ -318,6 +318,17 @@ export default function Custom() {
   useEffect(() => { treeMapRef.current = treeMap; }, [treeMap]);
   useEffect(() => {
     const unsub = subscribeFileEvents((evt) => {
+      // reindex：search 索引重建完成（5s 防抖后），mdDirsCache 已失效。
+      // 重拉所有已展开 tree，让"新建空目录 + 立即放 md"这种 corner case 也能显示出新目录。
+      if (evt.type === 'reindex') {
+        const tm = treeMapRef.current;
+        for (const p of Object.keys(tm)) {
+          getTree(SOURCE, p)
+            .then(({ entries }) => setTreeMap((m) => ({ ...m, [p]: entries })))
+            .catch(() => {});
+        }
+        return;
+      }
       if (evt.source !== SOURCE) return;
       if (selectedPath && evt.path === selectedPath) {
         if (evt.type === 'unlink') {

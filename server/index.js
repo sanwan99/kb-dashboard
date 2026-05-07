@@ -11,9 +11,9 @@ import { listDir } from './lib/tree.js';
 import { renderMarkdown } from './lib/markdown.js';
 import { parseProgress } from './lib/learn.js';
 import { buildHomeOverview, listRecent } from './lib/stats.js';
-import { buildSearchIndex, searchIndex, searchStats } from './lib/search.js';
+import { buildSearchIndex, searchIndex, searchStats, getCustomMountMdDirs } from './lib/search.js';
 import { buildObsidianIndex, getBacklinks, getNeighbors, getAllTags, obsidianStats } from './lib/obsidian-index.js';
-import { startWatchers, subscribe, setRebuildHandler, addMountWatch, removeMountWatch } from './lib/watcher.js';
+import { startWatchers, subscribe, setRebuildHandler, addMountWatch, removeMountWatch, broadcastReindex } from './lib/watcher.js';
 import {
   listMounts as listCustomMounts,
   addMount as addCustomMount,
@@ -147,7 +147,27 @@ app.get('/api/tree', async (req, reply) => {
     if (!stat.isDirectory()) {
       return reply.code(400).send({ error: 'not a directory' });
     }
-    const entries = await listDir(abs, rel);
+    let entries = await listDir(abs, rel);
+    // custom 源：用户引入的目录可能很杂（csv / pdf / zip 等），只显示 md 文件 + "递归含 md" 的目录。
+    // 复用 search 索引一次性构建好的 mdDirs 集合，O(1) 查表过滤；索引未就绪时退化为"只过滤文件"。
+    // 三源（learn/obsidian/work）保持原样。
+    if (source === 'custom') {
+      const segs = String(p || '').split('/').filter(Boolean);
+      const mountId = segs[0];
+      const dirInMount = segs.slice(1).join('/'); // 相对挂载点的当前目录
+      if (mountId && searchStats().ready) {
+        const mdDirs = getCustomMountMdDirs(mountId);
+        entries = entries.filter((e) => {
+          if (e.ext === 'md' || e.ext === 'markdown') return true;
+          if (e.type !== 'dir') return false;
+          const dirRel = dirInMount ? `${dirInMount}/${e.name}` : e.name;
+          return mdDirs.has(dirRel);
+        });
+      } else {
+        // 索引未就绪：保守只过滤掉非 md 文件，目录都保留
+        entries = entries.filter((e) => e.type === 'dir' || e.ext === 'md' || e.ext === 'markdown');
+      }
+    }
     return { source, path: rel, entries };
   } catch (err) {
     req.log.warn({ err }, 'tree failed');
@@ -443,6 +463,8 @@ app.ready().then(() => {
       buildSearchIndex(app.log),
       buildObsidianIndex(app.log),
     ]);
+    // 索引（含 custom 的 mdDirsCache）重建完成 → 通知前端重拉依赖索引的 UI（如 Custom 页文件树）
+    broadcastReindex();
   });
 });
 

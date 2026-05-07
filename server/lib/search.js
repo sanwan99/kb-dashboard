@@ -104,6 +104,8 @@ export async function buildSearchIndex(log) {
   }
   index = ms;
   docs = nextDocs;
+  // 索引重建 → custom 源"目录是否含 md"缓存失效
+  mdDirsCache = null;
   lastBuilt = new Date();
   building = false;
   log?.info(`search index ready: ${docs.size} docs in ${Date.now() - t0} ms`);
@@ -115,6 +117,34 @@ export const searchStats = () => ({
   docCount: docs.size,
   lastBuilt: lastBuilt?.toISOString() || null,
 });
+
+// custom 源："递归下去含 md 的目录"集合（按 mountId 分组），由索引复用构建。
+// key: mountId，value: Set<相对挂载点的目录路径>。
+let mdDirsCache = null;
+function ensureMdDirsCache() {
+  if (mdDirsCache) return mdDirsCache;
+  const map = new Map();
+  for (const doc of docs.values()) {
+    if (doc.source !== 'custom') continue;
+    const slash = doc.path.indexOf('/');
+    if (slash === -1) continue; // custom 源 path 形如 <mountId>/<rel>
+    const mountId = doc.path.slice(0, slash);
+    const rel = doc.path.slice(slash + 1); // 相对挂载点
+    if (!map.has(mountId)) map.set(mountId, new Set());
+    const set = map.get(mountId);
+    // 把这条 md 的所有祖先目录加入 set
+    let i = rel.lastIndexOf('/');
+    while (i > 0) {
+      set.add(rel.slice(0, i));
+      i = rel.lastIndexOf('/', i - 1);
+    }
+  }
+  mdDirsCache = map;
+  return map;
+}
+export function getCustomMountMdDirs(mountId) {
+  return ensureMdDirsCache().get(mountId) || new Set();
+}
 
 function buildSnippet(content, query, len = 160) {
   if (!content) return '';
