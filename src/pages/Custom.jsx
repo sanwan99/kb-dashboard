@@ -13,11 +13,11 @@ import {
   listCustomSources, addCustomSource, renameCustomSource, removeCustomSource,
   pickDirectory,
 } from '../lib/api.js';
+import { READABLE_EXTS } from '../lib/fileTypes.js';
 
 const SOURCE = 'custom';
 const ACCENT = '#4A8B5E';
 const ACCENT_BG = 'rgba(74,139,94,0.12)';
-const MD_EXTS = new Set(['md', 'markdown']);
 
 // 解析 selectedPath 中的 mountId（path 的第一段）
 function mountIdOf(p) {
@@ -164,7 +164,7 @@ function FileTree({ mountId, treeMap, expanded, selectedPath, onToggle, onSelect
     }
     return entries.map((e) => {
       const isDir = e.type === 'dir';
-      const isMd = e.type === 'file' && MD_EXTS.has(e.ext);
+      const isReadable = e.type === 'file' && READABLE_EXTS.has(e.ext);
       const isExp = expanded.has(e.path);
       const active = selectedPath === e.path;
       return (
@@ -174,9 +174,9 @@ function FileTree({ mountId, treeMap, expanded, selectedPath, onToggle, onSelect
             style={{
               gap: 4,
               padding: `3px 6px 3px ${8 + depth * 14}px`,
-              cursor: isDir || isMd ? 'pointer' : 'default',
+              cursor: isDir || isReadable ? 'pointer' : 'default',
             }}
-            onClick={() => (isDir ? onToggle(e.path) : isMd ? onSelectFile(e.path) : null)}
+            onClick={() => (isDir ? onToggle(e.path) : isReadable ? onSelectFile(e.path) : null)}
             onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir }))}
           >
             {isDir ? (
@@ -196,7 +196,7 @@ function FileTree({ mountId, treeMap, expanded, selectedPath, onToggle, onSelect
                 flex: 1,
                 fontWeight: active ? 600 : 400,
                 color: active ? ACCENT : 'var(--ink-sub)',
-                opacity: !isDir && !isMd ? 0.5 : 1,
+                opacity: !isDir && !isReadable ? 0.5 : 1,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -318,8 +318,8 @@ export default function Custom() {
   useEffect(() => { treeMapRef.current = treeMap; }, [treeMap]);
   useEffect(() => {
     const unsub = subscribeFileEvents((evt) => {
-      // reindex：search 索引重建完成（5s 防抖后），mdDirsCache 已失效。
-      // 重拉所有已展开 tree，让"新建空目录 + 立即放 md"这种 corner case 也能显示出新目录。
+      // reindex：search 索引重建完成（5s 防抖后），readableDirsCache 已失效。
+      // 重拉所有已展开 tree，让"新建空目录 + 立即放可读文件"这种 corner case 也能显示出新目录。
       if (evt.type === 'reindex') {
         const tm = treeMapRef.current;
         for (const p of Object.keys(tm)) {
@@ -509,7 +509,7 @@ export default function Custom() {
         ) : !selectedMount ? (
           <EmptyState hint="左栏选一个已引入的目录" />
         ) : !selectedPath ? (
-          <EmptyState hint="左栏选一个 md 文件" />
+          <EmptyState hint="左栏选一个可读文件" />
         ) : fileLoading ? (
           <LoadingState />
         ) : fileError ? (

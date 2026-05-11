@@ -27,9 +27,9 @@ function broadcast(evt) {
   }
 }
 
-// 索引（search / obsidian / mdDirs）重建完成后广播。前端可借此触发"重拉所有已展开 tree"等
+// 索引（search / obsidian / readableDirs）重建完成后广播。前端可借此触发"重拉所有已展开 tree"等
 // 依赖索引数据的 UI 更新——典型 corner case：用户在新空目录里立即放 md，SSE add 事件比
-// 索引重建快到达，前端立刻重拉 tree 时 mdDirs 还是旧的，新目录被过滤掉。
+// 索引重建快到达，前端立刻重拉 tree 时 readableDirs 还是旧的，新目录被过滤掉。
 export function broadcastReindex() {
   broadcast({ type: 'reindex', ts: Date.now() });
 }

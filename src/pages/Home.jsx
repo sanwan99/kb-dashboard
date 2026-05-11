@@ -79,7 +79,7 @@ export default function Home() {
             <div style={{ color: 'var(--ink-sub)', fontSize: 13.5, marginTop: 4 }}>
               {g ? (
                 <>
-                  全部来源共 <b>{g.totalFiles}</b> 个 md 文件 · 最近 7 天编辑 <b>{g.editedRecent}</b> 篇
+                  全部来源共 <b>{g.totalFiles}</b> 个可读文件 · 最近 7 天编辑 <b>{g.editedRecent}</b> 篇
                   {progress?.streak != null && (
                     <span> · 学习连续 <b style={{ color: 'var(--src-learn)' }}>{progress.streak}</b> 天</span>
                   )}
@@ -108,7 +108,7 @@ export default function Home() {
         <SectionHeader
           source="learn"
           title="学习项目"
-          subtitle={learn ? `${learn.fileCount} 个 md · 最近 ${relTime(learn.latestMtime)}` : '加载中…'}
+          subtitle={learn ? `${learn.fileCount} 个可读文件 · 最近 ${relTime(learn.latestMtime)}` : '加载中…'}
           right={
             <Link to="/learn" className="kb-btn ghost" style={{ fontSize: 12, textDecoration: 'none' }}>
               查看全部 <Icon name="arrow-r" size={12} />
@@ -213,7 +213,7 @@ export default function Home() {
                   <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--src-learn)' }} />
                   <span className="kb-mono" style={{ fontSize: 12.5, color: 'var(--ink)', flex: 1 }}>{t.name}</span>
                   <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
-                    {t.fileCount} md · {relTime(t.latestMtime)}
+                    {t.fileCount} 文件 · {relTime(t.latestMtime)}
                   </span>
                 </div>
               ))}
@@ -252,7 +252,7 @@ export default function Home() {
         <SectionHeader
           source="obsidian"
           title="Obsidian 知识库"
-          subtitle={overview?.obsidian ? `PARA · ${overview.obsidian.fileCount} 个 md · 最近 ${relTime(overview.obsidian.latestMtime)}` : 'PARA · 加载中…'}
+          subtitle={overview?.obsidian ? `PARA · ${overview.obsidian.fileCount} 个可读文件 · 最近 ${relTime(overview.obsidian.latestMtime)}` : 'PARA · 加载中…'}
           right={
             <div style={{ display: 'flex', gap: 6 }}>
               <Link to="/obsidian" className="kb-btn ghost" style={{ fontSize: 12, color: 'var(--src-obsidian)', textDecoration: 'none' }}>
@@ -296,7 +296,7 @@ export default function Home() {
         <SectionHeader
           source="work"
           title="公司项目笔记"
-          subtitle={overview?.work ? `${overview.work.fileCount} 个 md · 最近 ${relTime(overview.work.latestMtime)}` : '加载中…'}
+          subtitle={overview?.work ? `${overview.work.fileCount} 个可读文件 · 最近 ${relTime(overview.work.latestMtime)}` : '加载中…'}
           right={
             <Link to="/work" className="kb-btn ghost" style={{ fontSize: 12, textDecoration: 'none' }}>
               <Icon name="terminal" size={12} />
@@ -329,7 +329,7 @@ export default function Home() {
                   : '无活跃任务 · 归档中'}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-muted)', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                <span>{p.fileCount} md 总量</span>
+                <span>{p.fileCount} 文件总量</span>
                 <span>{relTime(p.latestMtime)}</span>
               </div>
             </Link>
@@ -342,7 +342,7 @@ export default function Home() {
           title="自定义来源"
           subtitle={
             overview?.custom
-              ? `${overview.custom.mountCount} 个目录 · ${overview.custom.fileCount} 个 md${overview.custom.latestMtime ? ` · 最近 ${relTime(overview.custom.latestMtime)}` : ''}`
+              ? `${overview.custom.mountCount} 个目录 · ${overview.custom.fileCount} 个可读文件${overview.custom.latestMtime ? ` · 最近 ${relTime(overview.custom.latestMtime)}` : ''}`
               : '加载中…'
           }
           right={
@@ -378,7 +378,7 @@ export default function Home() {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 600 }}>还没有引入任何目录</div>
               <div style={{ fontSize: 12, color: 'var(--ink-sub)', marginTop: 2 }}>
-                点这里去自定义来源页面，添加一个本地目录就能在看板里浏览/搜索它的 md 了。
+                点这里去自定义来源页面，添加一个本地目录就能在看板里浏览/搜索它的 md/sql 了。
               </div>
             </div>
             <Icon name="arrow-r" size={14} color="var(--ink-muted)" />
@@ -418,7 +418,7 @@ export default function Home() {
                   {m.realRoot}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-muted)', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                  <span>{m.fileCount} md</span>
+                  <span>{m.fileCount} 文件</span>
                   <span>{m.latestMtime ? relTime(m.latestMtime) : '—'}</span>
                 </div>
               </Link>

@@ -11,7 +11,7 @@ import { listDir } from './lib/tree.js';
 import { renderMarkdown } from './lib/markdown.js';
 import { parseProgress } from './lib/learn.js';
 import { buildHomeOverview, listRecent } from './lib/stats.js';
-import { buildSearchIndex, searchIndex, searchStats, getCustomMountMdDirs } from './lib/search.js';
+import { buildSearchIndex, searchIndex, searchStats, getCustomMountReadableDirs } from './lib/search.js';
 import { buildObsidianIndex, getBacklinks, getNeighbors, getAllTags, obsidianStats } from './lib/obsidian-index.js';
 import { startWatchers, subscribe, setRebuildHandler, addMountWatch, removeMountWatch, broadcastReindex } from './lib/watcher.js';
 import {
@@ -23,6 +23,7 @@ import {
   getMount as getCustomMount,
 } from './lib/custom-sources.js';
 import { guessMime, IMAGE_EXTS } from './lib/mime.js';
+import { isMarkdownExt, isReadableTextExt, renderCodeHtml } from './lib/file-types.js';
 
 const PORT = Number(process.env.PORT || 5174);
 const HOST = '127.0.0.1';
@@ -148,24 +149,24 @@ app.get('/api/tree', async (req, reply) => {
       return reply.code(400).send({ error: 'not a directory' });
     }
     let entries = await listDir(abs, rel);
-    // custom 源：用户引入的目录可能很杂（csv / pdf / zip 等），只显示 md 文件 + "递归含 md" 的目录。
-    // 复用 search 索引一次性构建好的 mdDirs 集合，O(1) 查表过滤；索引未就绪时退化为"只过滤文件"。
+    // custom 源：用户引入的目录可能很杂（csv / pdf / zip 等），只显示可读文件 + "递归含可读文件"的目录。
+    // 复用 search 索引一次性构建好的 readableDirs 集合，O(1) 查表过滤；索引未就绪时退化为"只过滤文件"。
     // 三源（learn/obsidian/work）保持原样。
     if (source === 'custom') {
       const segs = String(p || '').split('/').filter(Boolean);
       const mountId = segs[0];
       const dirInMount = segs.slice(1).join('/'); // 相对挂载点的当前目录
       if (mountId && searchStats().ready) {
-        const mdDirs = getCustomMountMdDirs(mountId);
+        const readableDirs = getCustomMountReadableDirs(mountId);
         entries = entries.filter((e) => {
-          if (e.ext === 'md' || e.ext === 'markdown') return true;
+          if (isReadableTextExt(e.ext)) return true;
           if (e.type !== 'dir') return false;
           const dirRel = dirInMount ? `${dirInMount}/${e.name}` : e.name;
-          return mdDirs.has(dirRel);
+          return readableDirs.has(dirRel);
         });
       } else {
-        // 索引未就绪：保守只过滤掉非 md 文件，目录都保留
-        entries = entries.filter((e) => e.type === 'dir' || e.ext === 'md' || e.ext === 'markdown');
+        // 索引未就绪：保守只过滤掉非可读文件，目录都保留
+        entries = entries.filter((e) => e.type === 'dir' || isReadableTextExt(e.ext));
       }
     }
     return { source, path: rel, entries };
@@ -187,7 +188,7 @@ app.get('/api/file', async (req, reply) => {
     const ext = path.extname(abs).slice(1).toLowerCase();
     const buf = await fs.readFile(abs);
 
-    if (ext === 'md' || ext === 'markdown') {
+    if (isMarkdownExt(ext)) {
       const raw = buf.toString('utf8');
       const { html, meta, raw: content } = renderMarkdown(raw, { source: src.id, filePath: rel });
       return {
@@ -199,6 +200,21 @@ app.get('/api/file', async (req, reply) => {
         meta,
         html,
         raw: content,
+      };
+    }
+
+    if (isReadableTextExt(ext)) {
+      const raw = buf.toString('utf8');
+      return {
+        source: src.id,
+        path: rel,
+        ext,
+        size: stat.size,
+        mtime: stat.mtime.toISOString(),
+        meta: null,
+        html: renderCodeHtml(raw, ext),
+        raw,
+        binary: false,
       };
     }
 
@@ -335,7 +351,7 @@ app.get('/api/home/overview', async (req, reply) => {
   }
 });
 
-// GET /api/recent?source=work&limit=50 — 某源下最近修改的 md 文件
+// GET /api/recent?source=work&limit=50 — 某源下最近修改的可读文件
 app.get('/api/recent', async (req, reply) => {
   const { source, limit } = req.query;
   if (!source || !SOURCES_BY_ID[source]) {
@@ -463,7 +479,7 @@ app.ready().then(() => {
       buildSearchIndex(app.log),
       buildObsidianIndex(app.log),
     ]);
-    // 索引（含 custom 的 mdDirsCache）重建完成 → 通知前端重拉依赖索引的 UI（如 Custom 页文件树）
+    // 索引（含 custom 的 readableDirsCache）重建完成 → 通知前端重拉依赖索引的 UI（如 Custom 页文件树）
     broadcastReindex();
   });
 });

@@ -10,9 +10,9 @@ import { useContextMenu } from '../lib/useContextMenu.jsx';
 import { buildFileMenuItems } from '../lib/fileActions.js';
 import { getTree, getFile, getLearnProgress, subscribeFileEvents } from '../lib/api.js';
 import { usePrefs } from '../lib/usePrefs.js';
+import { READABLE_EXTS, MARKDOWN_EXTS } from '../lib/fileTypes.js';
 
 const SOURCE = 'learn';
-const MD_EXTS = new Set(['md', 'markdown']);
 
 const STATUS_STYLE = {
   done: { fill: '100%', color: 'var(--src-learn)' },
@@ -394,9 +394,9 @@ function Sidebar({
     );
   };
 
-  const topicSystem = topicFiles?.filter((e) => e.type === 'file' && MD_EXTS.has(e.ext) && e.name.startsWith('_')) || [];
+  const topicSystem = topicFiles?.filter((e) => e.type === 'file' && MARKDOWN_EXTS.has(e.ext) && e.name.startsWith('_')) || [];
   const topicChapters =
-    topicFiles?.filter((e) => e.type === 'file' && MD_EXTS.has(e.ext) && !e.name.startsWith('_')) || [];
+    topicFiles?.filter((e) => e.type === 'file' && READABLE_EXTS.has(e.ext) && !e.name.startsWith('_')) || [];
 
   return (
     <div style={{ width: 260, background: 'var(--bg-tint)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -457,7 +457,7 @@ function Sidebar({
               笔记（{knowledgeFiles?.length ?? '…'}）
             </div>
             {knowledgeFiles
-              ?.filter((e) => e.type === 'file' && MD_EXTS.has(e.ext) && keep(e.name))
+              ?.filter((e) => e.type === 'file' && READABLE_EXTS.has(e.ext) && keep(e.name))
               .map((e) => renderFile(e, 8))}
           </>
         )}
@@ -502,7 +502,7 @@ function Sidebar({
                   </>
                 )}
                 {topicFiles && topicSystem.length === 0 && topicChapters.length === 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '8px' }}>专题内无 md 文件</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '8px' }}>专题内无可读文件</div>
                 )}
               </>
             )}
@@ -643,8 +643,8 @@ export default function LearnSpacious() {
         setTopicFiles(entries);
         // 只在 selectedPath 不在本专题内时才 auto-select，避免覆盖 URL 指定的文件
         if (selectedPath && selectedPath.startsWith(`review/${selectedTopic}/`)) return;
-        const progressMd = entries.find((e) => e.name.startsWith('_当前进度') || e.name === '_当前进度.md');
-        const first = entries.find((e) => e.type === 'file' && MD_EXTS.has(e.ext));
+        const progressMd = entries.find((e) => e.type === 'file' && MARKDOWN_EXTS.has(e.ext) && (e.name.startsWith('_当前进度') || e.name === '_当前进度.md'));
+        const first = entries.find((e) => e.type === 'file' && READABLE_EXTS.has(e.ext));
         const pick = progressMd || first;
         if (pick) setSelectedPath(pick.path);
       })
@@ -737,7 +737,7 @@ export default function LearnSpacious() {
             {progressError && !selectedPath ? (
               <ErrorState msg={`progress.md 加载失败：${progressError}`} />
             ) : !selectedPath ? (
-              <EmptyState hint="从左栏选一个 md 文件开始阅读，或点上方 progress.md 查看全文" />
+              <EmptyState hint="从左栏选一个可读文件开始阅读，或点上方 progress.md 查看全文" />
             ) : fileLoading ? (
               <LoadingState />
             ) : fileError ? (

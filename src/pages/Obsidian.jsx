@@ -9,9 +9,9 @@ import useRecentFiles from '../lib/useRecentFiles.js';
 import { useContextMenu } from '../lib/useContextMenu.jsx';
 import { buildFileMenuItems } from '../lib/fileActions.js';
 import { getTree, getFile, getObsidianBacklinks, getObsidianTags, getObsidianNeighbors, subscribeFileEvents } from '../lib/api.js';
+import { READABLE_EXTS } from '../lib/fileTypes.js';
 
 const SOURCE = 'obsidian';
-const MD_EXTS = new Set(['md', 'markdown']);
 
 // ── 侧栏 PARA 目录树（懒加载 + 展开/收起 + 本地过滤） ────────────────
 function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, tags }) {
@@ -35,7 +35,7 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, tags }) 
     if (shown.length === 0) return null;
     return shown.map((e) => {
       const isDir = e.type === 'dir';
-      const isMd = e.type === 'file' && MD_EXTS.has(e.ext);
+      const isReadable = e.type === 'file' && READABLE_EXTS.has(e.ext);
       const isExpanded = expanded.has(e.path);
       const active = selectedPath === e.path;
       return (
@@ -45,9 +45,9 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, tags }) 
             style={{
               gap: 4,
               padding: `3px 6px 3px ${8 + depth * 14}px`,
-              cursor: isDir || isMd ? 'pointer' : 'default',
+              cursor: isDir || isReadable ? 'pointer' : 'default',
             }}
-            onClick={() => (isDir ? onToggle(e.path) : isMd ? onSelect(e.path) : null)}
+            onClick={() => (isDir ? onToggle(e.path) : isReadable ? onSelect(e.path) : null)}
             onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir }))}
           >
             {isDir ? (
@@ -71,7 +71,7 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, tags }) 
               style={{
                 fontSize: 12,
                 flex: 1,
-                opacity: !isDir && !isMd ? 0.5 : 1,
+                opacity: !isDir && !isReadable ? 0.5 : 1,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',

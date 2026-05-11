@@ -6,6 +6,7 @@ import { Icon } from './primitives.jsx';
 import { usePrefs } from '../lib/usePrefs.js';
 import { useTheme } from '../lib/useTheme.js';
 import { getCachedSources } from '../lib/api.js';
+import { isMarkdownExt, isReadablePath } from '../lib/fileTypes.js';
 
 // 滚动位置记忆：URL（pathname + search）→ scrollTop
 // MarkdownView 切换文件时会被父组件 unmount/remount，所以用模块级 Map 跨实例存
@@ -21,10 +22,10 @@ function slugify(text) {
 }
 
 // 把相对路径基于当前文件目录解析成 source 内的相对路径
-function resolveRelativeMdPath(currentMdPath, relHref) {
-  if (!currentMdPath) return null;
-  const baseDir = currentMdPath.includes('/')
-    ? currentMdPath.slice(0, currentMdPath.lastIndexOf('/'))
+function resolveRelativeReadablePath(currentPath, relHref) {
+  if (!currentPath) return null;
+  const baseDir = currentPath.includes('/')
+    ? currentPath.slice(0, currentPath.lastIndexOf('/'))
     : '';
   const combined = baseDir ? baseDir + '/' + relHref : relHref;
   const parts = combined.split('/');
@@ -45,7 +46,7 @@ function resolveRelativeMdPath(currentMdPath, relHref) {
 //   1. http/https → target=_blank（Electron 跳系统浏览器）
 //   2. 锚点 # → 保留默认（TOC / 页内跳转）
 //   3. 绝对路径匹配三源 realRoot/root → 内部路由跳转
-//   4. 相对路径 *.md / *.markdown → 基于当前文件目录解析后内部跳转
+//   4. 相对路径 *.md / *.markdown / *.sql → 基于当前文件目录解析后内部跳转
 //   5. 其他（未识别）→ 阻止 + 灰化 + title 提示
 function processLinks(container, sources, navigate, ctx = {}) {
   if (!container) return;
@@ -83,12 +84,12 @@ function processLinks(container, sources, navigate, ctx = {}) {
       }
       // 3b. 没匹配：公司笔记的镜像路径兜底（md 里常写 greencloud/xxx 绝对路径，其实对应 work 源的 xxx/md/...）
       if (!matched && /\/md\/(codex|memory|需求|notebooks)\//.test(href)) {
-        const m = href.match(/\/([^\/]+)\/md\/(.+\.(?:md|markdown))(?:#.*)?$/i);
+        const m = href.match(/\/([^\/]+)\/md\/(.+\.(?:md|markdown|sql))(?:#.*)?$/i);
         if (m) {
           matched = { sourceId: 'work', rel: `${m[1]}/md/${m[2]}`, fallback: true };
         }
       }
-      if (matched && /\.(md|markdown)$/i.test(matched.rel)) {
+      if (matched && isReadablePath(matched.rel)) {
         a.style.color = `var(--src-${matched.sourceId})`;
         if (matched.fallback) a.title = `镜像到 work 源: ${matched.rel}`;
         a.addEventListener('click', (e) => {
@@ -97,10 +98,10 @@ function processLinks(container, sources, navigate, ctx = {}) {
         });
         return;
       }
-    } else if (/\.(md|markdown)(#.*)?$/i.test(href) && currentSource) {
-      // 4. 相对路径 md：基于当前文件目录解析
+    } else if (isReadablePath(href) && currentSource) {
+      // 4. 相对路径可读文件：基于当前文件目录解析
       const [pathPart] = href.split('#');
-      const resolved = resolveRelativeMdPath(currentMdPath, pathPart);
+      const resolved = resolveRelativeReadablePath(currentMdPath, pathPart);
       if (resolved) {
         a.style.color = `var(--src-${currentSource})`;
         a.addEventListener('click', (e) => {
@@ -124,7 +125,7 @@ function processLinks(container, sources, navigate, ctx = {}) {
 export function EmptyState({ hint }) {
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>
-      {hint || '左栏点一个 .md 文件开始阅读'}
+      {hint || '左栏点一个可读文件开始阅读'}
     </div>
   );
 }
@@ -390,6 +391,7 @@ export function MarkdownView({ path, file, badge, onToc }) {
   const dirParts = segments.slice(0, -1);
   const fileName = segments[segments.length - 1];
   const mtime = file.mtime ? new Date(file.mtime).toLocaleString('zh-CN', { hour12: false }) : '';
+  const isMarkdown = isMarkdownExt(file?.ext);
 
   // 渲染后处理：代码高亮 / Mermaid / 抽 TOC / 接管 a 链接
   // 依赖 resolvedTheme：主题切换时把 innerHTML 重置，让 mermaid 等重新按新配色渲染
@@ -398,13 +400,15 @@ export function MarkdownView({ path, file, badge, onToc }) {
       mdRef.current.innerHTML = file.html;
     }
     enhanceRendered(mdRef.current, {
-      renderMermaid: prefs.behavior.renderMermaid,
+      renderMermaid: isMarkdown && prefs.behavior.renderMermaid,
       onRequestZoom: setZoomedSvg,
     });
-    processLinks(mdRef.current, sources, navigate, {
-      sourceId: file?.source,
-      mdPath: path,
-    });
+    if (isMarkdown) {
+      processLinks(mdRef.current, sources, navigate, {
+        sourceId: file?.source,
+        mdPath: path,
+      });
+    }
     const container = mdRef.current;
     if (!container) return;
     const headings = container.querySelectorAll('h2, h3');
@@ -421,7 +425,7 @@ export function MarkdownView({ path, file, badge, onToc }) {
     });
     setToc(items);
     setActiveId(items[0]?.id || null);
-  }, [file?.html, prefs.behavior.renderMermaid, sources, resolvedTheme]);
+  }, [file?.html, file?.ext, prefs.behavior.renderMermaid, sources, resolvedTheme]);
 
   // 恢复滚动位置：必须在 innerHTML 注入之后跑，所以独立成一个依赖 file.html 的 useEffect。
   // 放在 html-setting effect 之后声明，保证 effect 执行顺序在它之后。

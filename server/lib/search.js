@@ -4,8 +4,8 @@ import path from 'node:path';
 import fg from 'fast-glob';
 import { SOURCES } from './sources.js';
 import { listMounts } from './custom-sources.js';
+import { READABLE_GLOB_PATTERNS } from './file-types.js';
 
-const GLOB_PATTERNS = ['**/*.md', '**/*.markdown'];
 const GLOB_IGNORE = [
   '**/.git/**',
   '**/.obsidian/**',
@@ -65,7 +65,7 @@ export async function buildSearchIndex(log) {
   for (const t of targets) {
     let files;
     try {
-      files = await fg(GLOB_PATTERNS, {
+      files = await fg(READABLE_GLOB_PATTERNS, {
         cwd: t.cwd,
         ignore: GLOB_IGNORE,
         stats: true,
@@ -104,8 +104,8 @@ export async function buildSearchIndex(log) {
   }
   index = ms;
   docs = nextDocs;
-  // 索引重建 → custom 源"目录是否含 md"缓存失效
-  mdDirsCache = null;
+  // 索引重建 → custom 源"目录是否含可读文件"缓存失效
+  readableDirsCache = null;
   lastBuilt = new Date();
   building = false;
   log?.info(`search index ready: ${docs.size} docs in ${Date.now() - t0} ms`);
@@ -118,11 +118,11 @@ export const searchStats = () => ({
   lastBuilt: lastBuilt?.toISOString() || null,
 });
 
-// custom 源："递归下去含 md 的目录"集合（按 mountId 分组），由索引复用构建。
+// custom 源："递归下去含可读文件的目录"集合（按 mountId 分组），由索引复用构建。
 // key: mountId，value: Set<相对挂载点的目录路径>。
-let mdDirsCache = null;
-function ensureMdDirsCache() {
-  if (mdDirsCache) return mdDirsCache;
+let readableDirsCache = null;
+function ensureReadableDirsCache() {
+  if (readableDirsCache) return readableDirsCache;
   const map = new Map();
   for (const doc of docs.values()) {
     if (doc.source !== 'custom') continue;
@@ -132,18 +132,18 @@ function ensureMdDirsCache() {
     const rel = doc.path.slice(slash + 1); // 相对挂载点
     if (!map.has(mountId)) map.set(mountId, new Set());
     const set = map.get(mountId);
-    // 把这条 md 的所有祖先目录加入 set
+    // 把这条可读文件的所有祖先目录加入 set
     let i = rel.lastIndexOf('/');
     while (i > 0) {
       set.add(rel.slice(0, i));
       i = rel.lastIndexOf('/', i - 1);
     }
   }
-  mdDirsCache = map;
+  readableDirsCache = map;
   return map;
 }
-export function getCustomMountMdDirs(mountId) {
-  return ensureMdDirsCache().get(mountId) || new Set();
+export function getCustomMountReadableDirs(mountId) {
+  return ensureReadableDirsCache().get(mountId) || new Set();
 }
 
 function buildSnippet(content, query, len = 160) {

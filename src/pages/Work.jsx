@@ -9,9 +9,9 @@ import useRecentFiles from '../lib/useRecentFiles.js';
 import { useContextMenu } from '../lib/useContextMenu.jsx';
 import { buildFileMenuItems } from '../lib/fileActions.js';
 import { getTree, getFile, getRecent, subscribeFileEvents } from '../lib/api.js';
+import { READABLE_EXTS, MARKDOWN_EXTS } from '../lib/fileTypes.js';
 
 const SOURCE = 'work';
-const MD_EXTS = new Set(['md', 'markdown']);
 
 // 识别 <proj>/md/codex/current 目录
 const isCodexCurrent = (p) => {
@@ -58,7 +58,7 @@ function Sidebar({
     if (shown.length === 0) return null;
     return shown.map((e) => {
       const isDir = e.type === 'dir';
-      const isMd = e.type === 'file' && MD_EXTS.has(e.ext);
+      const isReadable = e.type === 'file' && READABLE_EXTS.has(e.ext);
       const isExp = expanded.has(e.path);
       const active = selectedPath === e.path;
       const hot = isDir && isCodexCurrent(e.path);
@@ -71,7 +71,7 @@ function Sidebar({
             style={{
               gap: 4,
               padding: `3px 6px 3px ${8 + depth * 14}px`,
-              cursor: isDir || isMd ? 'pointer' : 'default',
+              cursor: isDir || isReadable ? 'pointer' : 'default',
               ...(hot
                 ? {
                     background: 'var(--src-work-bg)',
@@ -82,7 +82,7 @@ function Sidebar({
                   }
                 : null),
             }}
-            onClick={() => (isDir ? onToggle(e.path) : isMd ? onSelectFile(e.path) : null)}
+            onClick={() => (isDir ? onToggle(e.path) : isReadable ? onSelectFile(e.path) : null)}
             onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir }))}
           >
             {isDir ? (
@@ -109,7 +109,7 @@ function Sidebar({
                 fontSize: 12,
                 flex: 1,
                 fontWeight: hot ? 600 : 400,
-                opacity: !isDir && !isMd ? 0.5 : 1,
+                opacity: !isDir && !isReadable ? 0.5 : 1,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -259,7 +259,7 @@ function RecentModsBody({ items, selectedPath, onSelect }) {
     return <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>加载中…</div>;
   }
   if (items.length === 0) {
-    return <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>公司笔记仓里暂无 md 文件</div>;
+    return <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', padding: '6px 14px' }}>公司笔记仓里暂无可读文件</div>;
   }
   return (
     <div style={{ padding: '4px 12px 0' }}>
@@ -362,7 +362,7 @@ export default function Work() {
         results.forEach((r, i) => {
           map[projs[i].name] =
             r.status === 'fulfilled'
-              ? r.value.entries.filter((e) => e.type === 'file' && MD_EXTS.has(e.ext))
+              ? r.value.entries.filter((e) => e.type === 'file' && MARKDOWN_EXTS.has(e.ext))
                   .map((e) => ({ name: e.name, path: e.path, mtime: e.mtime, size: e.size }))
               : [];
         });
@@ -530,7 +530,7 @@ export default function Work() {
         {initError ? (
           <ErrorState msg={`无法加载项目列表：${initError}`} />
         ) : !selectedPath ? (
-          <EmptyState hint="左栏选一个项目，点开 md/codex/current/ 下的任务 md" />
+          <EmptyState hint="左栏选一个项目，点开 md/codex/current/ 下的任务文件" />
         ) : fileLoading ? (
           <LoadingState />
         ) : fileError ? (

@@ -3,8 +3,8 @@ import path from 'node:path';
 import { SOURCES, SOURCES_BY_ID } from './sources.js';
 import { parseProgress } from './learn.js';
 import { listMounts } from './custom-sources.js';
+import { MARKDOWN_EXTS, READABLE_GLOB_PATTERNS } from './file-types.js';
 
-const GLOB_PATTERNS = ['**/*.md', '**/*.markdown'];
 const GLOB_IGNORE = [
   '**/.git/**',
   '**/.obsidian/**',
@@ -18,9 +18,9 @@ const GLOB_IGNORE = [
   '**/*_副本/**',
 ];
 
-// 扫描一个源下所有 md（含 stat）。
+// 扫描一个源下所有可读文件（含 stat）。
 // custom 源：遍历所有可用挂载点，path 字段拼 mountId 前缀。
-async function scanMd(sourceId) {
+async function scanReadable(sourceId) {
   const src = SOURCES_BY_ID[sourceId];
   if (!src) return [];
 
@@ -38,7 +38,7 @@ async function scanMd(sourceId) {
   for (const t of targets) {
     let entries;
     try {
-      entries = await fg(GLOB_PATTERNS, {
+      entries = await fg(READABLE_GLOB_PATTERNS, {
         cwd: t.cwd,
         ignore: GLOB_IGNORE,
         stats: true,
@@ -56,6 +56,7 @@ async function scanMd(sourceId) {
       out.push({
         name: e.name,
         path: relPath,
+        ext: path.extname(e.name).slice(1).toLowerCase(),
         size: e.stats.size,
         mtime: new Date(e.stats.mtimeMs),
         mountId: t.mountId,
@@ -68,9 +69,9 @@ async function scanMd(sourceId) {
 const latest = (files) =>
   files.length ? new Date(Math.max(...files.map((f) => f.mtime.getTime()))).toISOString() : null;
 
-// 某源下最近修改的 md 文件，按 mtime 倒序
+// 某源下最近修改的可读文件，按 mtime 倒序
 export async function listRecent(source, limit = 50) {
-  const files = await scanMd(source);
+  const files = await scanReadable(source);
   files.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
   return files.slice(0, limit).map((f) => ({
     name: f.name,
@@ -87,7 +88,7 @@ function groupByTopDir(files) {
   const map = new Map();
   for (const f of files) {
     const top = f.path.split('/')[0];
-    if (!top || top === f.path) continue; // 顶层 md 文件跳过
+    if (!top || top === f.path) continue; // 顶层文件跳过
     if (!map.has(top)) map.set(top, []);
     map.get(top).push(f);
   }
@@ -109,7 +110,7 @@ function groupByProject(files) {
     if (!proj || proj === f.path) continue;
     if (!map.has(proj)) map.set(proj, { files: [], active: [] });
     map.get(proj).files.push(f);
-    if (segs.length >= 4 && segs[1] === 'md' && segs[2] === 'codex' && segs[3] === 'current') {
+    if (segs.length >= 4 && segs[1] === 'md' && segs[2] === 'codex' && segs[3] === 'current' && MARKDOWN_EXTS.has(f.ext)) {
       map.get(proj).active.push(f);
     }
   }
@@ -148,10 +149,10 @@ function groupByMount(files, mounts) {
 // 聚合首页数据
 export async function buildHomeOverview() {
   const [learnFiles, obsidianFiles, workFiles, customFiles] = await Promise.all([
-    scanMd('learn'),
-    scanMd('obsidian'),
-    scanMd('work'),
-    scanMd('custom'),
+    scanReadable('learn'),
+    scanReadable('obsidian'),
+    scanReadable('work'),
+    scanReadable('custom'),
   ]);
   const customMounts = listMounts();
 
