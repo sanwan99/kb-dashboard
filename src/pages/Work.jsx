@@ -13,6 +13,23 @@ import { READABLE_EXTS, MARKDOWN_EXTS } from '../lib/fileTypes.js';
 
 const SOURCE = 'work';
 
+const isSameOrChild = (p, target) => p === target || p.startsWith(target + '/');
+const parentOf = (p) => {
+  const parts = p.split('/');
+  parts.pop();
+  return parts.join('/');
+};
+
+const WORK_SIDEBAR_WIDTH_KEY = 'kb-work-sidebar-width';
+const WORK_SIDEBAR_DEFAULT_WIDTH = 240;
+const WORK_SIDEBAR_MIN_WIDTH = 220;
+const WORK_SIDEBAR_MAX_WIDTH = 560;
+
+const clampWorkSidebarWidth = (value) => Math.min(
+  WORK_SIDEBAR_MAX_WIDTH,
+  Math.max(WORK_SIDEBAR_MIN_WIDTH, value),
+);
+
 // 识别 <proj>/md/codex/current 目录
 const isCodexCurrent = (p) => {
   const parts = p.split('/');
@@ -37,10 +54,42 @@ function Sidebar({
   selectedPath,
   onToggle,
   onSelectFile,
+  onTrashed,
 }) {
   const [filter, setFilter] = useState('');
+  const sidebarRef = useRef(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof localStorage === 'undefined') return WORK_SIDEBAR_DEFAULT_WIDTH;
+    const stored = Number(localStorage.getItem(WORK_SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(stored) && stored > 0
+      ? clampWorkSidebarWidth(stored)
+      : WORK_SIDEBAR_DEFAULT_WIDTH;
+  });
   const ctx = useContextMenu();
   const q = filter.trim().toLowerCase();
+
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(WORK_SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
+  }, [sidebarWidth]);
+
+  const startResize = (e) => {
+    e.preventDefault();
+    const left = sidebarRef.current?.getBoundingClientRect().left ?? 0;
+    const onMove = (ev) => {
+      setSidebarWidth(clampWorkSidebarWidth(ev.clientX - left));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
 
   const renderLevel = (path, depth = 0) => {
     if (!expanded.has(path) && path !== selectedProject) return null;
@@ -83,7 +132,7 @@ function Sidebar({
                 : null),
             }}
             onClick={() => (isDir ? onToggle(e.path) : isReadable ? onSelectFile(e.path) : null)}
-            onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir }))}
+            onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir, onTrashed }))}
           >
             {isDir ? (
               <Icon name={isExp ? 'chev-d' : 'chev-r'} size={10} color="var(--ink-muted)" />
@@ -105,9 +154,11 @@ function Sidebar({
             />
             <span
               className="kb-mono"
+              title={e.name}
               style={{
                 fontSize: 12,
                 flex: 1,
+                minWidth: 0,
                 fontWeight: hot ? 600 : 400,
                 opacity: !isDir && !isReadable ? 0.5 : 1,
                 whiteSpace: 'nowrap',
@@ -132,15 +183,38 @@ function Sidebar({
 
   return (
     <div
+      ref={sidebarRef}
       style={{
-        width: 240,
+        width: sidebarWidth,
+        minWidth: WORK_SIDEBAR_MIN_WIDTH,
+        maxWidth: WORK_SIDEBAR_MAX_WIDTH,
+        flexShrink: 0,
         background: 'var(--bg-tint)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
+        position: 'relative',
       }}
     >
+      <div
+        className="work-sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整左侧目录宽度"
+        title="拖动调整左侧目录宽度"
+        onMouseDown={startResize}
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: -4,
+          bottom: 0,
+          width: 8,
+          cursor: 'col-resize',
+          zIndex: 5,
+          touchAction: 'none',
+        }}
+      />
       <div style={{ padding: '12px 12px 8px' }}>
         <SourcePill source="work" />
         <div className="kb-serif" style={{ fontSize: 14, fontWeight: 600, marginTop: 8 }}>公司项目笔记</div>
@@ -169,10 +243,24 @@ function Sidebar({
               className={`tree-row ${selected ? 'active-work' : ''}`}
               style={{ gap: 6, padding: '4px 8px', cursor: 'pointer' }}
               onClick={() => onSelectProject(p.name)}
-              onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: p.name, isDir: true }))}
+              onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: p.name, isDir: true, onTrashed }))}
             >
               <Icon name="git" size={12} color={selected ? 'var(--src-work)' : 'var(--ink-muted)'} />
-              <span className="kb-mono" style={{ fontSize: 12, flex: 1, fontWeight: selected ? 600 : 400 }}>{p.name}</span>
+              <span
+                className="kb-mono"
+                title={p.name}
+                style={{
+                  fontSize: 12,
+                  flex: 1,
+                  minWidth: 0,
+                  fontWeight: selected ? 600 : 400,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {p.name}
+              </span>
               {active > 0 && (
                 <span
                   style={{
@@ -325,7 +413,7 @@ export default function Work() {
   const [fileError, setFileError] = useState(null);
   const [initError, setInitError] = useState(null);
   const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
-  const [recent] = useRecentFiles('kb-recent-work', selectedPath);
+  const [recent, , removeRecent] = useRecentFiles('kb-recent-work', selectedPath);
   const [recentMods, setRecentMods] = useState(null);
 
   // 活跃修改：全 work 源按 mtime 倒序 top 50
@@ -501,6 +589,43 @@ export default function Work() {
     });
   };
 
+  const handleTrashed = (path) => {
+    removeRecent(path);
+    setRecentMods((items) => items?.filter((it) => !isSameOrChild(it.path, path)) ?? items);
+    setActiveTasks((m) => Object.fromEntries(
+      Object.entries(m).map(([project, items]) => [
+        project,
+        items.filter((it) => !isSameOrChild(it.path, path)),
+      ]),
+    ));
+    setProjects((items) => items.filter((p) => !isSameOrChild(p.path || p.name, path)));
+    if (selectedProject && isSameOrChild(selectedProject, path)) {
+      setSelectedProject(null);
+    }
+    if (selectedPath && isSameOrChild(selectedPath, path)) {
+      setSelectedPath(null);
+      setFile(null);
+      setFileError(null);
+    }
+    setExpanded((s) => {
+      const next = new Set();
+      for (const p of s) {
+        if (!isSameOrChild(p, path)) next.add(p);
+      }
+      return next;
+    });
+    setTreeMap((m) => {
+      const next = {};
+      for (const [key, entries] of Object.entries(m)) {
+        if (isSameOrChild(key, path)) continue;
+        next[key] = key === parentOf(path)
+          ? entries.filter((e) => !isSameOrChild(e.path, path))
+          : entries;
+      }
+      return next;
+    });
+  };
+
   const isSelectedActive =
     selectedPath && activeTasks[projectOf(selectedPath)]?.some((f) => f.path === selectedPath);
   const badge = isSelectedActive ? (
@@ -526,6 +651,7 @@ export default function Work() {
           selectedPath={selectedPath}
           onToggle={handleToggle}
           onSelectFile={setSelectedPath}
+          onTrashed={handleTrashed}
         />
         {initError ? (
           <ErrorState msg={`无法加载项目列表：${initError}`} />
@@ -569,6 +695,7 @@ export default function Work() {
                 onSelect={setSelectedPath}
                 accent="var(--src-work)"
                 source="work"
+                onTrashed={handleTrashed}
               />
             </CollapsibleSection>
             <CollapsibleSection

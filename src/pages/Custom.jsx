@@ -19,6 +19,13 @@ const SOURCE = 'custom';
 const ACCENT = '#4A8B5E';
 const ACCENT_BG = 'rgba(74,139,94,0.12)';
 
+const isSameOrChild = (p, target) => p === target || p.startsWith(target + '/');
+const parentOf = (p) => {
+  const parts = p.split('/');
+  parts.pop();
+  return parts.join('/');
+};
+
 // 解析 selectedPath 中的 mountId（path 的第一段）
 function mountIdOf(p) {
   if (!p) return null;
@@ -142,7 +149,7 @@ function MountRow({ mount, selected, onSelect, onRename, onRemove }) {
   );
 }
 
-function FileTree({ mountId, treeMap, expanded, selectedPath, onToggle, onSelectFile }) {
+function FileTree({ mountId, treeMap, expanded, selectedPath, onToggle, onSelectFile, onTrashed }) {
   const ctx = useContextMenu();
 
   const renderLevel = (path, depth = 0) => {
@@ -177,7 +184,7 @@ function FileTree({ mountId, treeMap, expanded, selectedPath, onToggle, onSelect
               cursor: isDir || isReadable ? 'pointer' : 'default',
             }}
             onClick={() => (isDir ? onToggle(e.path) : isReadable ? onSelectFile(e.path) : null)}
-            onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir }))}
+            onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir, onTrashed }))}
           >
             {isDir ? (
               <Icon name={isExp ? 'chev-d' : 'chev-r'} size={10} color="var(--ink-muted)" />
@@ -230,7 +237,7 @@ export default function Custom() {
   const [fileError, setFileError] = useState(null);
   const [initError, setInitError] = useState(null);
   const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
-  const [recent] = useRecentFiles('kb-recent-custom', selectedPath);
+  const [recent, , removeRecent] = useRecentFiles('kb-recent-custom', selectedPath);
 
   // 拉挂载列表
   const refreshMounts = () =>
@@ -421,6 +428,32 @@ export default function Custom() {
     }
   };
 
+  const handleTrashed = (path) => {
+    removeRecent(path);
+    if (selectedPath && isSameOrChild(selectedPath, path)) {
+      setSelectedPath(null);
+      setFile(null);
+      setFileError(null);
+    }
+    setExpanded((s) => {
+      const next = new Set();
+      for (const p of s) {
+        if (!isSameOrChild(p, path)) next.add(p);
+      }
+      return next;
+    });
+    setTreeMap((m) => {
+      const next = {};
+      for (const [key, entries] of Object.entries(m)) {
+        if (isSameOrChild(key, path)) continue;
+        next[key] = key === parentOf(path)
+          ? entries.filter((e) => !isSameOrChild(e.path, path))
+          : entries;
+      }
+      return next;
+    });
+  };
+
   return (
     <Frame>
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
@@ -496,6 +529,7 @@ export default function Custom() {
                 selectedPath={selectedPath}
                 onToggle={handleToggle}
                 onSelectFile={setSelectedPath}
+                onTrashed={handleTrashed}
               />
             </>
           )}
@@ -550,6 +584,7 @@ export default function Custom() {
                 onSelect={setSelectedPath}
                 accent={ACCENT}
                 source="custom"
+                onTrashed={handleTrashed}
               />
             </CollapsibleSection>
           </div>

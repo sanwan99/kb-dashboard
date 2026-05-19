@@ -106,7 +106,7 @@ export default function ContextMenu({ x, y, items, onClose }) {
               <Icon
                 name={it.icon}
                 size={12}
-                color={it.disabled ? 'var(--ink-muted)' : 'var(--ink-sub)'}
+                color={it.disabled ? 'var(--ink-muted)' : (it.danger ? 'var(--danger)' : 'var(--ink-sub)')}
               />
             )}
             <span style={{ flex: 1, whiteSpace: 'nowrap' }}>{it.label}</span>

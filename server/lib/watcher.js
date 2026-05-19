@@ -62,16 +62,24 @@ function attachWatcher(rootAbs, broadcastSource, broadcastPathPrefix, log) {
     return broadcastPathPrefix ? path.posix.join(broadcastPathPrefix, rel.split(path.sep).join('/')) : rel;
   };
   watcher
+    .on('addDir', (abs) => {
+      broadcast({ type: 'add', kind: 'dir', source: broadcastSource, path: relTo(abs), ts: Date.now() });
+      scheduleRebuild();
+    })
     .on('add', (abs) => {
-      broadcast({ type: 'add', source: broadcastSource, path: relTo(abs), ts: Date.now() });
+      broadcast({ type: 'add', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() });
       scheduleRebuild();
     })
     .on('change', (abs) => {
-      broadcast({ type: 'change', source: broadcastSource, path: relTo(abs), ts: Date.now() });
+      broadcast({ type: 'change', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() });
       scheduleRebuild();
     })
     .on('unlink', (abs) => {
-      broadcast({ type: 'unlink', source: broadcastSource, path: relTo(abs), ts: Date.now() });
+      broadcast({ type: 'unlink', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() });
+      scheduleRebuild();
+    })
+    .on('unlinkDir', (abs) => {
+      broadcast({ type: 'unlink', kind: 'dir', source: broadcastSource, path: relTo(abs), ts: Date.now() });
       scheduleRebuild();
     })
     .on('error', (err) => log?.warn({ err, source: broadcastSource }, 'watcher error'));

@@ -44,6 +44,10 @@ export function openWithExternal(body) {
   return postJson('/api/open-with', body);
 }
 
+export function trashFile(source, path) {
+  return postJson('/api/file/trash', { source, path });
+}
+
 export function getSources() {
   return request('/api/sources').then((d) => d.sources);
 }

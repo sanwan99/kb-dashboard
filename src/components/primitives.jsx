@@ -74,6 +74,8 @@ export const Icon = ({ name, size = 16, stroke = 1.6, color = 'currentColor', st
       return <svg {...common}><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>;
     case 'filter':
       return <svg {...common}><path d="M3 5h18l-7 9v5l-4-2v-3L3 5z"/></svg>;
+    case 'trash':
+      return <svg {...common}><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6M14 11v6"/></svg>;
     default:
       return null;
   }

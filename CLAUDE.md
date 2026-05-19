@@ -6,7 +6,7 @@
 
 **本地 Markdown 三源聚合看板**。把分布在三个完全不同风格的笔记仓聚合成一个可浏览/搜索/路由的 Web 应用，Electron 包装成桌面 App。
 
-## 三个数据源（软链 + 只读）
+## 三个数据源（软链 + 默认只读）
 
 | 源 id | 软链位置 | 真实路径 | 风格 |
 |---|---|---|---|
@@ -94,7 +94,7 @@ kb-dashboard/
 └── screenshots/ uploads/       # 设计附件
 ```
 
-## API 端点（全部 GET，只读）
+## API 端点
 
 | 端点 | 用途 |
 |---|---|
@@ -112,10 +112,11 @@ kb-dashboard/
 | `GET /api/obsidian/neighbors?path` | 局部图谱：入链 + 出链（direction: in/out/both） |
 | `GET /api/obsidian/tags` | 所有 `#tag` + 频次 |
 | `GET /api/obsidian/stats` | Obsidian 索引状态 |
+| `POST /api/file/trash` | 受控例外：将四源内单个文件或目录移到 macOS 系统废纸篓 |
 
 ## 硬约束（改代码前必读）
 
-1. **只读，不碰软链目标**：`data/{learn,obsidian,work}` 指向用户真实笔记，**绝对不要写入**（fs API / git 都不行）。所有路由必须保持 GET。
+1. **默认只读，废纸篓删除是唯一受控例外**：`data/{learn,obsidian,work}` 指向用户真实笔记，除 `POST /api/file/trash` 可将单个文件或目录移到 macOS 系统废纸篓外，禁止写入软链目标。不得新增永久删除、批量删除或任意 `absPath` 写路由。
 2. **`safeResolve` 不可绕过**：任何接收 `source + path` 的路由必须过 `server/lib/sources.js` 的 `safeResolve`，防 `..` 穿透。
 3. **不要在公司项目下对 `md/` 跑 git**：全局规则（见 `~/.claude/CLAUDE.md` 第 3.4 节）。看板读取 OK，`git status/commit` 要去 notes 仓（`~/work/code/sanwan/notes`）做。
 4. **`design-preview/` 是归档**：保留 9 个未选中的设计变体参考，**不要当垃圾删**。`npm run preview-design` 能用 serve 看。

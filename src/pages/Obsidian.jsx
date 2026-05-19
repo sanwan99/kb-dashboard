@@ -13,8 +13,15 @@ import { READABLE_EXTS } from '../lib/fileTypes.js';
 
 const SOURCE = 'obsidian';
 
+const isSameOrChild = (p, target) => p === target || p.startsWith(target + '/');
+const parentOf = (p) => {
+  const parts = p.split('/');
+  parts.pop();
+  return parts.join('/');
+};
+
 // ── 侧栏 PARA 目录树（懒加载 + 展开/收起 + 本地过滤） ────────────────
-function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, tags }) {
+function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, onTrashed, tags }) {
   const [filter, setFilter] = useState('');
   const ctx = useContextMenu();
   const q = filter.trim().toLowerCase();
@@ -48,7 +55,7 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, tags }) 
               cursor: isDir || isReadable ? 'pointer' : 'default',
             }}
             onClick={() => (isDir ? onToggle(e.path) : isReadable ? onSelect(e.path) : null)}
-            onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir }))}
+            onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir, onTrashed }))}
           >
             {isDir ? (
               <Icon name={isExpanded ? 'chev-d' : 'chev-r'} size={10} color="var(--ink-muted)" />
@@ -319,7 +326,7 @@ export default function Obsidian() {
   const [rootError, setRootError] = useState(null);
   const [tags, setTags] = useState(null);
   const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
-  const [recent] = useRecentFiles('kb-recent-obsidian', selectedPath);
+  const [recent, , removeRecent] = useRecentFiles('kb-recent-obsidian', selectedPath);
   const { backlinks, loading: blLoading, stats: blStats } = useBacklinks(selectedPath);
 
   // 初始化加载根
@@ -423,6 +430,32 @@ export default function Obsidian() {
     });
   };
 
+  const handleTrashed = (path) => {
+    removeRecent(path);
+    if (selectedPath && isSameOrChild(selectedPath, path)) {
+      setSelectedPath(null);
+      setFile(null);
+      setFileError(null);
+    }
+    setExpanded((s) => {
+      const next = new Set();
+      for (const p of s) {
+        if (!isSameOrChild(p, path)) next.add(p);
+      }
+      return next;
+    });
+    setTreeMap((m) => {
+      const next = {};
+      for (const [key, entries] of Object.entries(m)) {
+        if (key && isSameOrChild(key, path)) continue;
+        next[key] = key === parentOf(path)
+          ? entries.filter((e) => !isSameOrChild(e.path, path))
+          : entries;
+      }
+      return next;
+    });
+  };
+
   return (
     <Frame>
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
@@ -432,6 +465,7 @@ export default function Obsidian() {
           selectedPath={selectedPath}
           onToggle={handleToggle}
           onSelect={setSelectedPath}
+          onTrashed={handleTrashed}
           tags={tags}
         />
         {rootError ? (
@@ -476,6 +510,7 @@ export default function Obsidian() {
                 onSelect={setSelectedPath}
                 accent="var(--src-obsidian)"
                 source="obsidian"
+                onTrashed={handleTrashed}
               />
             </CollapsibleSection>
             <CollapsibleSection

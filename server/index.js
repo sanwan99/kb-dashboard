@@ -24,6 +24,7 @@ import {
 } from './lib/custom-sources.js';
 import { guessMime, IMAGE_EXTS } from './lib/mime.js';
 import { isMarkdownExt, isReadableTextExt, renderCodeHtml } from './lib/file-types.js';
+import { movePathToTrash } from './lib/trash.js';
 
 const PORT = Number(process.env.PORT || 5174);
 const HOST = '127.0.0.1';
@@ -247,6 +248,64 @@ app.get('/api/blob', async (req, reply) => {
     return reply.send(createReadStream(abs));
   } catch (err) {
     req.log.warn({ err }, 'blob failed');
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+function isWithinRoot(realPath, realRoot) {
+  const root = path.resolve(realRoot);
+  return realPath === root || realPath.startsWith(root + path.sep);
+}
+
+function reject(code, message) {
+  const err = new Error(message);
+  err.statusCode = code;
+  return err;
+}
+
+// POST /api/file/trash — 将四源内的单个文件或目录移到 macOS 系统废纸篓。
+// 只接收 source + path；禁止 absPath，必须经 safeResolve，且拒绝删除来源根 / custom 挂载根。
+app.post('/api/file/trash', async (req, reply) => {
+  const body = req.body || {};
+  const { source, path: relPath } = body;
+
+  if (!source) return reply.code(400).send({ error: 'source required' });
+  if (typeof relPath !== 'string' || !relPath.trim()) {
+    return reply.code(400).send({ error: 'path required' });
+  }
+
+  try {
+    const resolved = safeResolve(source, relPath);
+    const abs = path.resolve(resolved.abs);
+    const srcRoot = path.resolve(resolved.source.root);
+
+    if (!resolved.source.multi && abs === srcRoot) {
+      throw reject(400, '禁止删除来源根目录');
+    }
+    if (resolved.source.multi && resolved.mount && abs === path.resolve(resolved.mount.realRoot)) {
+      throw reject(400, '禁止删除 custom 挂载根目录');
+    }
+
+    let stat;
+    try {
+      stat = await fs.lstat(abs);
+    } catch (err) {
+      if (err.code === 'ENOENT') throw reject(404, '文件或目录不存在');
+      throw err;
+    }
+
+    const allowedRoot = resolved.source.multi
+      ? resolved.mount?.realRoot
+      : resolved.source.realRoot;
+    const parentReal = await fs.realpath(path.dirname(abs));
+    if (!allowedRoot || !isWithinRoot(parentReal, allowedRoot)) {
+      throw reject(403, '目标父目录不在来源根目录内');
+    }
+
+    const { kind } = await movePathToTrash(abs, stat);
+    return { ok: true, source: resolved.source.id, path: resolved.rel, kind };
+  } catch (err) {
+    req.log.warn({ err, source, path: relPath }, 'trash failed');
     return reply.code(err.statusCode || 500).send({ error: err.message });
   }
 });

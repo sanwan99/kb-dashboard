@@ -9,7 +9,8 @@ import { buildFileMenuItems } from '../lib/fileActions.js';
 //   onSelect(path) — 点击跳转
 //   accent         — 色（通常是当前源色）
 //   source         — 'learn' | 'obsidian' | 'work'，提供后右键菜单可用
-export default function RecentList({ recent = [], currentPath, onSelect, accent = 'var(--ink-sub)', source }) {
+//   onTrashed(path) — 右键移到废纸篓成功后的回调
+export default function RecentList({ recent = [], currentPath, onSelect, accent = 'var(--ink-sub)', source, onTrashed }) {
   const ctx = useContextMenu();
   if (recent.length === 0) {
     return (
@@ -34,7 +35,7 @@ export default function RecentList({ recent = [], currentPath, onSelect, accent 
             onClick={() => onSelect?.(p)}
             onContextMenu={
               source
-                ? (e) => ctx.open(e, buildFileMenuItems({ source, relPath: p, isDir: false }))
+                ? (e) => ctx.open(e, buildFileMenuItems({ source, relPath: p, isDir: false, onTrashed }))
                 : undefined
             }
             title={p}

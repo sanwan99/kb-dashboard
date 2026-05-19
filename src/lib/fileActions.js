@@ -1,4 +1,4 @@
-import { getCachedSources, openWithExternal } from './api.js';
+import { getCachedSources, openWithExternal, trashFile } from './api.js';
 
 // 调起外部应用 / Finder / 复制路径 — 给右键菜单和工具栏共用
 
@@ -8,6 +8,10 @@ export function openWithApp({ source, path: relPath, absPath, app = 'typora' }) 
 
 export function revealInFinder({ source, path: relPath, absPath }) {
   return openWithExternal({ action: 'reveal', source, path: relPath, absPath });
+}
+
+export function moveToTrash({ source, path: relPath }) {
+  return trashFile(source, relPath);
 }
 
 export async function copyToClipboard(text) {
@@ -50,12 +54,14 @@ export async function buildAbsPathFor(source, relPath) {
 //   source: 'learn' | 'obsidian' | 'work'
 //   relPath: 该源下的相对路径
 //   isDir: 是否目录（影响"用 Typora 打开"的可用性）
-export function buildFileMenuItems({ source, relPath, isDir = false }) {
+export function buildFileMenuItems({ source, relPath, isDir = false, onTrashed }) {
   if (!source || !relPath) return [];
   const handle = (action) => action().catch((err) => {
     // eslint-disable-next-line no-alert
     window.alert(err?.message || String(err));
   });
+  const trashLabel = isDir ? '将目录移到废纸篓' : '移到废纸篓';
+  const trashKind = isDir ? '目录' : '文件';
   return [
     {
       label: '用 Typora 打开',
@@ -81,6 +87,21 @@ export function buildFileMenuItems({ source, relPath, isDir = false }) {
         const abs = await buildAbsPathFor(source, relPath);
         if (abs) await copyToClipboard(abs);
       },
+    },
+    { divider: true },
+    {
+      label: trashLabel,
+      icon: 'trash',
+      danger: true,
+      onClick: () => handle(async () => {
+        const name = relPath.split('/').filter(Boolean).pop() || relPath;
+        const ok = window.confirm(
+          `将${trashKind} "${name}" 移到系统废纸篓吗？\n\n${relPath}\n\n可从废纸篓恢复。`,
+        );
+        if (!ok) return;
+        const result = await moveToTrash({ source, path: relPath });
+        onTrashed?.(relPath, result);
+      }),
     },
   ];
 }

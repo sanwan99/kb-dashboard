@@ -15,6 +15,7 @@
 - **公司项目活跃任务**：扫所有 `<project>/md/codex/current/*.md` 聚合到右栏
 - **Markdown 阅读增强**：代码高亮（`highlight.js`）+ Mermaid 懒加载 + 图片嵌入（`![[image.png]]`）+ 右侧 TOC（滚动高亮）
 - **文件热更新**：chokidar 监听三源 → SSE 推送，改了 md 无需手动刷新
+- **受控删除**：右键文件或目录可移到 macOS 系统废纸篓，不做永久删除
 - **深色主题**：light / dark / system 三档，跟随系统配色切换
 - **智能链接跳转**：5 档识别（http/锚点/绝对源路径/相对 md/镜像仓库路径）
 - **Electron 打包**：单进程内置 Fastify + `asar + asarUnpack`，产出 `.app` 可直接启动
@@ -134,6 +135,11 @@ data/work     → ~/work/code/sanwan/notes
 
 ## 改动记录
 
+**v1.5 — 右键移到系统废纸篓**
+- 四源文件树和最近打开列表支持右键“移到废纸篓”，覆盖文件与目录
+- 后端新增 `POST /api/file/trash`，只接收 `source + path`，经 `safeResolve` 后调用 macOS 系统废纸篓
+- 禁止删除来源根目录和 custom 挂载根目录；不提供永久删除
+
 **v1.4 — Electron 打包实际可用 + 链接智能跳转**
 - `npm run dist` 真正产出可双击的 `.app`
 - 修了一串连环坑：Vite `base: './'`（file:// 下绝对路径 404）/ `directories.output: 'release'`（和 vite dist 分离）/ `asarUnpack` server + 核心 node_modules（ESM 加载器在 asar 内有兼容问题）/ preload 注入 `window.__KB_API_BASE__`
@@ -194,9 +200,11 @@ data/work     → ~/work/code/sanwan/notes
 **v0.1 — 静态设计稿**
 - Claude design 产出 9 个页面变体，`design-preview/` 归档，`npm run preview-design` 能看
 
-## 只读保证
+## 默认只读与删除例外
 
-前端不做任何写操作。后端只做：目录扫描、文件读取、SSE 推送。全局规则要求禁止在公司项目下对 `md/` 跑 git —— 这条由后端白名单保证（无任何写路由）。
+看板默认只做目录扫描、文件读取、搜索索引和 SSE 推送。唯一写入用户知识源的受控例外是 `POST /api/file/trash`：右键确认后把单个文件或目录移到 macOS 系统废纸篓，不做永久删除，也不允许删除来源根目录或 custom 挂载根目录。
+
+全局规则要求禁止在公司项目下对 `md/` 跑 git；这仍由项目协作规则保证，删除功能只作用于文件系统废纸篓，不执行 git 操作。
 
 ## 维护者提示
 

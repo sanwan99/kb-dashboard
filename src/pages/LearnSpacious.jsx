@@ -14,6 +14,8 @@ import { READABLE_EXTS, MARKDOWN_EXTS } from '../lib/fileTypes.js';
 
 const SOURCE = 'learn';
 
+const isSameOrChild = (p, target) => p === target || p.startsWith(target + '/');
+
 const STATUS_STYLE = {
   done: { fill: '100%', color: 'var(--src-learn)' },
   'in-progress': { fill: '55%', color: 'var(--src-learn)' },
@@ -368,6 +370,7 @@ function Sidebar({
   topicFiles,
   selectedPath,
   onSelectFile,
+  onTrashed,
 }) {
   const [filter, setFilter] = useState('');
   const ctx = useContextMenu();
@@ -383,7 +386,7 @@ function Sidebar({
         className={`tree-row ${active ? 'active-learn' : ''}`}
         style={{ padding: `3px 6px 3px ${6 + indent}px`, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}
         onClick={() => onSelectFile(e.path)}
-        onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir: false }))}
+        onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir: false, onTrashed }))}
       >
         <Icon name="file" size={11} color={active ? 'var(--src-learn)' : 'var(--ink-muted)'} />
         <span style={{ flex: 1, fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -475,7 +478,7 @@ function Sidebar({
                   className={`tree-row ${on ? 'active-learn' : ''}`}
                   style={{ fontFamily: 'var(--font-mono)', padding: '4px 8px', cursor: 'pointer' }}
                   onClick={() => onSelectTopic(t.name)}
-                  onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: `review/${t.name}`, isDir: true }))}
+                  onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: `review/${t.name}`, isDir: true, onTrashed }))}
                 >
                   <Icon name="folder" size={12} color={on ? 'var(--src-learn)' : 'var(--ink-muted)'} />
                   <span style={{ flex: 1, fontSize: 12, fontWeight: on ? 600 : 400 }}>{t.name}</span>
@@ -595,7 +598,7 @@ export default function LearnSpacious() {
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState(null);
   const [tocState, setTocState] = useState({ toc: [], activeId: null, jumpTo: () => {} });
-  const [recent] = useRecentFiles('kb-recent-learn', selectedPath);
+  const [recent, , removeRecent] = useRecentFiles('kb-recent-learn', selectedPath);
 
   // 折叠顶部的阶段/断点卡片（持久化到 localStorage；首次默认值走 Prefs）
   const prefs = usePrefs();
@@ -704,6 +707,33 @@ export default function LearnSpacious() {
     setFile(null);
   };
 
+  const handleTrashed = (path) => {
+    removeRecent(path);
+    if (selectedPath && isSameOrChild(selectedPath, path)) {
+      setSelectedPath(null);
+      setFile(null);
+      setFileError(null);
+    }
+    if (path === 'progress.md') {
+      setProgress(null);
+      setProgressError('progress.md 已移到系统废纸篓');
+    }
+    setKnowledgeFiles((items) => items?.filter((e) => !isSameOrChild(e.path, path)) ?? items);
+    if (path.startsWith('review/')) {
+      const parts = path.split('/');
+      const topic = parts[1];
+      if (topic && parts.length === 2) {
+        setReviewTopics((items) => items?.filter((e) => e.name !== topic) ?? items);
+        if (selectedTopic === topic) {
+          setSelectedTopic(null);
+          setTopicFiles(null);
+        }
+      } else if (topic && selectedTopic === topic) {
+        setTopicFiles((items) => items?.filter((e) => !isSameOrChild(e.path, path)) ?? items);
+      }
+    }
+  };
+
   const openProgressMd = () => setSelectedPath('progress.md');
 
   return (
@@ -722,6 +752,7 @@ export default function LearnSpacious() {
           topicFiles={topicFiles}
           selectedPath={selectedPath}
           onSelectFile={setSelectedPath}
+          onTrashed={handleTrashed}
         />
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
@@ -779,6 +810,7 @@ export default function LearnSpacious() {
                 onSelect={setSelectedPath}
                 accent="var(--src-learn)"
                 source="learn"
+                onTrashed={handleTrashed}
               />
             </CollapsibleSection>
             <CollapsibleSection

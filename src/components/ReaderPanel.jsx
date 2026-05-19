@@ -21,6 +21,38 @@ function slugify(text) {
     .slice(0, 64);
 }
 
+const FRONTMATTER_ORDER = ['title', 'type', 'status', 'owner', 'created', 'updated', 'completed'];
+
+function formatMetaValue(value) {
+  if (value == null) return '';
+  if (value instanceof Date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(value.getMinutes())}`;
+  }
+  if (Array.isArray(value)) {
+    return value.map(formatMetaValue).join(', ');
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function formatFrontmatter(meta) {
+  if (!meta || typeof meta !== 'object') return '';
+  const keys = Object.keys(meta);
+  if (keys.length === 0) return '';
+  const ordered = [
+    ...FRONTMATTER_ORDER.filter((k) => Object.prototype.hasOwnProperty.call(meta, k)),
+    ...keys.filter((k) => !FRONTMATTER_ORDER.includes(k)).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+  ];
+  return ordered.map((k) => `${k}: ${formatMetaValue(meta[k])}`).join('\n');
+}
+
 // 把相对路径基于当前文件目录解析成 source 内的相对路径
 function resolveRelativeReadablePath(currentPath, relHref) {
   if (!currentPath) return null;
@@ -392,6 +424,7 @@ export function MarkdownView({ path, file, badge, onToc }) {
   const fileName = segments[segments.length - 1];
   const mtime = file.mtime ? new Date(file.mtime).toLocaleString('zh-CN', { hour12: false }) : '';
   const isMarkdown = isMarkdownExt(file?.ext);
+  const frontmatterText = isMarkdown ? formatFrontmatter(file.meta) : '';
 
   // 渲染后处理：代码高亮 / Mermaid / 抽 TOC / 接管 a 链接
   // 依赖 resolvedTheme：主题切换时把 innerHTML 重置，让 mermaid 等重新按新配色渲染
@@ -567,13 +600,22 @@ export function MarkdownView({ path, file, badge, onToc }) {
       <div ref={scrollRef} className="kb-scroll" style={{ flex: 1, padding: '32px 40px 40px', minHeight: 0 }}>
         <div className="md" style={{ maxWidth: 780, margin: '0 auto' }}>
           <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6 }}>{path}</div>
-          {file.meta && file.meta.tags && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-              {(Array.isArray(file.meta.tags) ? file.meta.tags : [file.meta.tags]).map((t) => (
-                <span key={t} className="kb-mono" style={{ fontSize: 10.5, color: 'var(--src-obsidian)', background: 'var(--src-obsidian-bg)', padding: '2px 8px', borderRadius: 3 }}>
-                  #{t}
-                </span>
-              ))}
+          {frontmatterText && (
+            <div
+              className="kb-mono"
+              style={{
+                whiteSpace: 'pre-wrap',
+                background: 'var(--bg-raised)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '14px 18px',
+                margin: '0 0 22px',
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: 'var(--ink-muted)',
+              }}
+            >
+              {frontmatterText}
             </div>
           )}
           <div ref={mdRef} dangerouslySetInnerHTML={{ __html: file.html }} />

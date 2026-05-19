@@ -38,5 +38,19 @@ export default function useRecentFiles(storageKey, currentPath, capacity = 15) {
     } catch { /* ignore */ }
   };
 
-  return [recent, clearRecent];
+  const removeRecent = (path) => {
+    if (!path) return;
+    setRecent((prev) => {
+      const next = prev.filter((p) => p !== path && !p.startsWith(path + '/'));
+      try {
+        if (typeof localStorage !== 'undefined') {
+          if (next.length) localStorage.setItem(storageKey, JSON.stringify(next));
+          else localStorage.removeItem(storageKey);
+        }
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  return [recent, clearRecent, removeRecent];
 }
