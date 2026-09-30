@@ -4,8 +4,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-LEARN_TARGET="$HOME/Desktop/文档/个人学习项目"
-OBSIDIAN_TARGET="$HOME/Desktop/文档/个人知识库"
 WORK_TARGET="$HOME/work/code/sanwan/notes"
 
 mkdir -p data
@@ -32,8 +30,6 @@ ensure_link() {
   fi
 }
 
-ensure_link learn    "$LEARN_TARGET"
-ensure_link obsidian "$OBSIDIAN_TARGET"
 ensure_link work     "$WORK_TARGET"
 
 if [[ ! -d node_modules ]]; then

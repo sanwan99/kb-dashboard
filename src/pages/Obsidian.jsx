@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
 import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
 import SidePanel from '../components/SidePanel.jsx';
+import ResizableSidebar from '../components/ResizableSidebar.jsx';
 import CollapsibleSection from '../components/CollapsibleSection.jsx';
 import RecentList from '../components/RecentList.jsx';
 import useRememberedPath from '../lib/useRememberedPath.js';
@@ -75,9 +76,11 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, onTrashe
             />
             <span
               className="kb-mono"
+              title={e.name}
               style={{
                 fontSize: 12,
                 flex: 1,
+                minWidth: 0,
                 opacity: !isDir && !isReadable ? 0.5 : 1,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -94,7 +97,14 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, onTrashe
   };
 
   return (
-    <div style={{ width: 280, background: 'var(--bg-tint)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <ResizableSidebar
+      storageKey="kb-obsidian-sidebar-width"
+      defaultWidth={280}
+      minWidth={220}
+      maxWidth={560}
+      label="调整 Obsidian 左侧栏宽度"
+      accentColor="var(--src-obsidian)"
+    >
       <div style={{ padding: '12px 12px 8px' }}>
         <SourcePill source="obsidian" />
         <div className="kb-serif" style={{ fontSize: 14.5, fontWeight: 600, marginTop: 8 }}>个人知识库</div>
@@ -157,7 +167,7 @@ function Sidebar({ treeMap, expanded, selectedPath, onToggle, onSelect, onTrashe
         )}
       </div>
       {ctx.Element}
-    </div>
+    </ResizableSidebar>
   );
 }
 

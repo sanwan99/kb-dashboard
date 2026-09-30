@@ -100,7 +100,7 @@ export default function Search() {
       setError(null);
       const srcs = Object.entries(enabledSources).filter(([, on]) => on).map(([k]) => k);
       apiSearch(q, { sources: srcs, limit: 60 })
-        .then((d) => { setData(d); setIndexDirty(false); })
+        .then((d) => { setData(d); setStats(d); setIndexDirty(false); })
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     }, 180);
@@ -118,7 +118,7 @@ export default function Search() {
     setError(null);
     const srcs = Object.entries(enabledSources).filter(([, on]) => on).map(([k]) => k);
     apiSearch(q, { sources: srcs, limit: 60 })
-      .then((d) => { setData(d); setIndexDirty(false); })
+      .then((d) => { setData(d); setStats(d); setIndexDirty(false); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
     getSearchStats().then(setStats).catch(() => {});
@@ -174,7 +174,7 @@ export default function Search() {
           <div className="kb-mono" style={{ fontSize: 10.5, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
             {stats ? (
               <>
-                {stats.ready ? '✓ 就绪' : '… 构建中'}
+                {stats.ready ? (stats.dirty ? '已过期' : '✓ 就绪') : '等待搜索'}
                 <br />
                 {stats.docCount} 篇 md
                 <br />

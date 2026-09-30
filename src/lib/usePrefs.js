@@ -4,8 +4,8 @@ const STORAGE_KEY = 'kb-prefs';
 
 const DEFAULTS = {
   density: 'standard', // 'breathe' | 'standard' | 'compact'
-  fontSize: 15,        // 12-20
-  sources: { learn: true, obsidian: true, work: true, custom: true },
+  fontSize: 16,        // 12-20
+  sources: { work: true, custom: true },
   behavior: {
     restoreLastFile: true,
     openBreakpointOnLearn: false,
@@ -23,7 +23,7 @@ function readStored() {
     return {
       density: parsed.density || DEFAULTS.density,
       fontSize: parsed.fontSize || DEFAULTS.fontSize,
-      sources: { ...DEFAULTS.sources, ...(parsed.sources || {}) },
+      sources: { work: parsed.sources?.work !== false, custom: parsed.sources?.custom !== false },
       behavior: { ...DEFAULTS.behavior, ...(parsed.behavior || {}) },
     };
   } catch {
@@ -40,7 +40,7 @@ function getSnapshot() {
 
 function write(next) {
   snapshot = next;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* 仍应用当前会话设置。 */ }
   applyToDocument(next);
   for (const fn of listeners) fn();
 }

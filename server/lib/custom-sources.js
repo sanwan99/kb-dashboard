@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 
 import { SOURCES } from './sources.js';
 
-const CONFIG_DIR = path.join(os.homedir(), '.kb-dashboard');
+const CONFIG_DIR = process.env.KB_CONFIG_DIR || path.join(os.homedir(), '.kb-dashboard');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'custom-sources.json');
 
 const listeners = new Set();

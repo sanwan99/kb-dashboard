@@ -44,6 +44,12 @@ export async function buildAbsPathFor(source, relPath) {
     const sources = await getCachedSources();
     const s = sources.find((x) => x.id === source);
     if (!s || !s.realRoot) return null;
+    if (s.multi) {
+      const [mountId, ...parts] = String(relPath || '').split('/');
+      const mount = s.mounts?.find((item) => item.id === mountId);
+      if (!mount?.realRoot) return null;
+      return [mount.realRoot.replace(/\/$/, ''), ...parts].join('/');
+    }
     return relPath ? `${s.realRoot}/${relPath}` : s.realRoot;
   } catch {
     return null;

@@ -10,8 +10,13 @@ export default defineConfig({
     open: false,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5174',
+        target: `http://127.0.0.1:${process.env.KB_API_PORT || 5174}`,
         changeOrigin: false,
+        configure(proxy) {
+          proxy.on('proxyRes', (response, request, client) => {
+            if (request.url?.startsWith('/api/events')) response.once('aborted', () => client.destroy());
+          });
+        },
       },
     },
   },

@@ -17,7 +17,7 @@ if (!isDev) {
 function ensureDataOrWarn() {
   if (isDev) return true;
   const dataDir = process.env.KB_DATA_DIR;
-  const missing = ['learn', 'obsidian', 'work'].filter(
+  const missing = ['work'].filter(
     (id) => !fs.existsSync(path.join(dataDir, id)),
   );
   if (missing.length > 0) {
@@ -85,7 +85,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 620,
     backgroundColor: '#FAF9F5',
-    title: '个人知识库',
+    title: '资料检索台',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences,

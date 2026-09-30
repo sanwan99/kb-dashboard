@@ -4,6 +4,7 @@ import useRecentFiles from '../lib/useRecentFiles.js';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
 import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
 import SidePanel from '../components/SidePanel.jsx';
+import ResizableSidebar from '../components/ResizableSidebar.jsx';
 import CollapsibleSection from '../components/CollapsibleSection.jsx';
 import RecentList from '../components/RecentList.jsx';
 import { useContextMenu } from '../lib/useContextMenu.jsx';
@@ -389,7 +390,10 @@ function Sidebar({
         onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: e.path, isDir: false, onTrashed }))}
       >
         <Icon name="file" size={11} color={active ? 'var(--src-learn)' : 'var(--ink-muted)'} />
-        <span style={{ flex: 1, fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span
+          title={e.name}
+          style={{ flex: 1, minWidth: 0, fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
           {e.name}
         </span>
         <span style={{ fontSize: 10, color: 'var(--ink-muted)' }}>{sizeKb}</span>
@@ -402,7 +406,14 @@ function Sidebar({
     topicFiles?.filter((e) => e.type === 'file' && READABLE_EXTS.has(e.ext) && !e.name.startsWith('_')) || [];
 
   return (
-    <div style={{ width: 260, background: 'var(--bg-tint)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <ResizableSidebar
+      storageKey="kb-learn-sidebar-width"
+      defaultWidth={260}
+      minWidth={220}
+      maxWidth={560}
+      label="调整学习项目左侧栏宽度"
+      accentColor="var(--src-learn)"
+    >
       <div style={{ padding: '14px 14px 8px' }}>
         <SourcePill source="learn" />
         <div className="kb-serif" style={{ fontSize: 15, fontWeight: 600, marginTop: 8 }}>AI Agent 学习项目</div>
@@ -481,7 +492,20 @@ function Sidebar({
                   onContextMenu={(ev) => ctx.open(ev, buildFileMenuItems({ source: SOURCE, relPath: `review/${t.name}`, isDir: true, onTrashed }))}
                 >
                   <Icon name="folder" size={12} color={on ? 'var(--src-learn)' : 'var(--ink-muted)'} />
-                  <span style={{ flex: 1, fontSize: 12, fontWeight: on ? 600 : 400 }}>{t.name}</span>
+                  <span
+                    title={t.name}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 12,
+                      fontWeight: on ? 600 : 400,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {t.name}
+                  </span>
                 </div>
               );
             })}
@@ -513,7 +537,7 @@ function Sidebar({
         )}
       </div>
       {ctx.Element}
-    </div>
+    </ResizableSidebar>
   );
 }
 

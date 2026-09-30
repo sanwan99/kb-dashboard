@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Frame, Icon } from '../components/primitives.jsx';
 import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
 import SidePanel from '../components/SidePanel.jsx';
+import ResizableSidebar from '../components/ResizableSidebar.jsx';
 import CollapsibleSection from '../components/CollapsibleSection.jsx';
 import RecentList from '../components/RecentList.jsx';
 import useRememberedPath from '../lib/useRememberedPath.js';
@@ -198,9 +199,11 @@ function FileTree({ mountId, treeMap, expanded, selectedPath, onToggle, onSelect
             />
             <span
               className="kb-mono"
+              title={e.name}
               style={{
                 fontSize: 12,
                 flex: 1,
+                minWidth: 0,
                 fontWeight: active ? 600 : 400,
                 color: active ? ACCENT : 'var(--ink-sub)',
                 opacity: !isDir && !isReadable ? 0.5 : 1,
@@ -458,15 +461,13 @@ export default function Custom() {
     <Frame>
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* 左栏：挂载列表 + 当前挂载文件树 */}
-        <div
-          style={{
-            width: 260,
-            background: 'var(--bg-tint)',
-            borderRight: '1px solid var(--border)',
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0,
-          }}
+        <ResizableSidebar
+          storageKey="kb-custom-sidebar-width"
+          defaultWidth={260}
+          minWidth={220}
+          maxWidth={560}
+          label="调整自定义来源左侧栏宽度"
+          accentColor="var(--src-custom)"
         >
           <MountManagerHeader onAdd={handleAdd} />
           <div
@@ -533,7 +534,7 @@ export default function Custom() {
               />
             </>
           )}
-        </div>
+        </ResizableSidebar>
 
         {/* 中间：阅读器 */}
         {initError ? (

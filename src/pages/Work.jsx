@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Frame, Icon, SourcePill } from '../components/primitives.jsx';
 import { EmptyState, LoadingState, ErrorState, MarkdownView, TocList } from '../components/ReaderPanel.jsx';
 import SidePanel from '../components/SidePanel.jsx';
+import ResizableSidebar from '../components/ResizableSidebar.jsx';
 import CollapsibleSection from '../components/CollapsibleSection.jsx';
 import RecentList from '../components/RecentList.jsx';
 import useRememberedPath from '../lib/useRememberedPath.js';
@@ -19,16 +20,6 @@ const parentOf = (p) => {
   parts.pop();
   return parts.join('/');
 };
-
-const WORK_SIDEBAR_WIDTH_KEY = 'kb-work-sidebar-width';
-const WORK_SIDEBAR_DEFAULT_WIDTH = 240;
-const WORK_SIDEBAR_MIN_WIDTH = 220;
-const WORK_SIDEBAR_MAX_WIDTH = 560;
-
-const clampWorkSidebarWidth = (value) => Math.min(
-  WORK_SIDEBAR_MAX_WIDTH,
-  Math.max(WORK_SIDEBAR_MIN_WIDTH, value),
-);
 
 // 识别 <proj>/md/codex/current 目录
 const isCodexCurrent = (p) => {
@@ -57,39 +48,8 @@ function Sidebar({
   onTrashed,
 }) {
   const [filter, setFilter] = useState('');
-  const sidebarRef = useRef(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    if (typeof localStorage === 'undefined') return WORK_SIDEBAR_DEFAULT_WIDTH;
-    const stored = Number(localStorage.getItem(WORK_SIDEBAR_WIDTH_KEY));
-    return Number.isFinite(stored) && stored > 0
-      ? clampWorkSidebarWidth(stored)
-      : WORK_SIDEBAR_DEFAULT_WIDTH;
-  });
   const ctx = useContextMenu();
   const q = filter.trim().toLowerCase();
-
-  useEffect(() => {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(WORK_SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
-  }, [sidebarWidth]);
-
-  const startResize = (e) => {
-    e.preventDefault();
-    const left = sidebarRef.current?.getBoundingClientRect().left ?? 0;
-    const onMove = (ev) => {
-      setSidebarWidth(clampWorkSidebarWidth(ev.clientX - left));
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
 
   const renderLevel = (path, depth = 0) => {
     if (!expanded.has(path) && path !== selectedProject) return null;
@@ -182,39 +142,14 @@ function Sidebar({
   };
 
   return (
-    <div
-      ref={sidebarRef}
-      style={{
-        width: sidebarWidth,
-        minWidth: WORK_SIDEBAR_MIN_WIDTH,
-        maxWidth: WORK_SIDEBAR_MAX_WIDTH,
-        flexShrink: 0,
-        background: 'var(--bg-tint)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0,
-        position: 'relative',
-      }}
+    <ResizableSidebar
+      storageKey="kb-work-sidebar-width"
+      defaultWidth={240}
+      minWidth={220}
+      maxWidth={560}
+      label="调整公司笔记左侧栏宽度"
+      accentColor="var(--src-work)"
     >
-      <div
-        className="work-sidebar-resizer"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="调整左侧目录宽度"
-        title="拖动调整左侧目录宽度"
-        onMouseDown={startResize}
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: -4,
-          bottom: 0,
-          width: 8,
-          cursor: 'col-resize',
-          zIndex: 5,
-          touchAction: 'none',
-        }}
-      />
       <div style={{ padding: '12px 12px 8px' }}>
         <SourcePill source="work" />
         <div className="kb-serif" style={{ fontSize: 14, fontWeight: 600, marginTop: 8 }}>公司项目笔记</div>
@@ -323,7 +258,7 @@ function Sidebar({
         </>
       )}
       {ctx.Element}
-    </div>
+    </ResizableSidebar>
   );
 }
 

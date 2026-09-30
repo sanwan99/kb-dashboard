@@ -4,11 +4,15 @@ const API_BASE =
 
 export const apiUrl = (path) => API_BASE + path;
 
-async function request(url) {
-  const r = await fetch(apiUrl(url));
+async function request(url, { signal } = {}) {
+  const r = await fetch(apiUrl(url), { signal });
   if (!r.ok) {
     const body = await r.text().catch(() => '');
-    throw new Error(`${r.status} ${r.statusText}: ${body}`);
+    let message = body;
+    try { message = JSON.parse(body).error || body; } catch { /* 使用原始错误说明。 */ }
+    const error = new Error(message || `请求失败（${r.status}）`);
+    error.status = r.status;
+    throw error;
   }
   return r.json();
 }
@@ -30,7 +34,9 @@ async function jsonRequest(method, url, body) {
     } catch {
       msg = await r.text().catch(() => '');
     }
-    throw new Error(`${r.status} ${r.statusText}: ${msg}`);
+    const error = new Error(msg || `请求失败（${r.status}）`);
+    error.status = r.status;
+    throw error;
   }
   if (r.status === 204) return null;
   return r.json();
@@ -58,14 +64,14 @@ export async function getCachedSources() {
   return sourcesCache;
 }
 
-export function getTree(sourceId, relPath = '') {
+export function getTree(sourceId, relPath = '', options = {}) {
   const qs = new URLSearchParams({ source: sourceId, path: relPath });
-  return request(`/api/tree?${qs}`);
+  return request(`/api/tree?${qs}`, options);
 }
 
-export function getFile(sourceId, relPath) {
+export function getFile(sourceId, relPath, options = {}) {
   const qs = new URLSearchParams({ source: sourceId, path: relPath });
-  return request(`/api/file?${qs}`);
+  return request(`/api/file?${qs}`, options);
 }
 
 export function getLearnProgress() {
@@ -76,15 +82,21 @@ export function getHomeOverview() {
   return request('/api/home/overview');
 }
 
-export function getRecent(source, limit = 50) {
-  return request(`/api/recent?source=${encodeURIComponent(source)}&limit=${limit}`);
+export function getRecent(source, limit = 50, options = {}) {
+  const params = new URLSearchParams({ source, limit: String(limit) });
+  if (options.project) params.set('project', options.project);
+  if (options.mount) params.set('mount', options.mount);
+  return request(`/api/recent?${params}`, options);
 }
 
-export function search(q, { sources = [], limit = 60 } = {}) {
+export function search(q, { sources = [], limit = 60, offset = 0, project, mount, signal } = {}) {
   const qs = new URLSearchParams({ q });
   if (sources.length) qs.set('source', sources.join(','));
   if (limit) qs.set('limit', String(limit));
-  return request(`/api/search?${qs}`);
+  if (offset) qs.set('offset', String(offset));
+  if (project) qs.set('project', project);
+  if (mount) qs.set('mount', mount);
+  return request(`/api/search?${qs}`, { signal });
 }
 
 export function getSearchStats() {
@@ -110,19 +122,29 @@ export function getObsidianNeighbors(relPath) {
  * @param {(evt: {type:'add'|'change'|'unlink', source:string, path:string, ts:number}) => void} onEvent
  * @returns {() => void} 调用返回值可断开订阅
  */
-export function subscribeFileEvents(onEvent) {
+export function subscribeFileEvents(onEvent, onConnection) {
   if (typeof EventSource === 'undefined') return () => {};
-  const es = new EventSource(apiUrl('/api/events'));
-  es.onmessage = (e) => {
-    try {
-      const evt = JSON.parse(e.data);
-      onEvent(evt);
-    } catch { /* ignore */ }
+  let es;
+  let retryTimer;
+  let stopped = false;
+  let retryDelay = 1000;
+  const connect = () => {
+    if (stopped) return;
+    es = new EventSource(apiUrl('/api/events'));
+    es.onopen = () => { retryDelay = 1000; onConnection?.(true); };
+    es.onmessage = (event) => {
+      try { onEvent(JSON.parse(event.data)); } catch { /* 忽略格式不完整的事件。 */ }
+    };
+    es.onerror = () => {
+      es.close();
+      onConnection?.(false);
+      // HTTP 500 会让 EventSource 永久关闭，需要显式重新连接。
+      retryTimer = setTimeout(connect, retryDelay);
+      retryDelay = Math.min(10_000, retryDelay * 2);
+    };
   };
-  es.onerror = () => {
-    // EventSource 会自动重连，这里静默
-  };
-  return () => es.close();
+  connect();
+  return () => { stopped = true; clearTimeout(retryTimer); es?.close(); };
 }
 
 export function blobUrl(source, relPath) {

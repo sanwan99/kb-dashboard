@@ -1,7 +1,6 @@
 import fg from 'fast-glob';
 import path from 'node:path';
 import { SOURCES, SOURCES_BY_ID } from './sources.js';
-import { parseProgress } from './learn.js';
 import { listMounts } from './custom-sources.js';
 import { MARKDOWN_EXTS, READABLE_GLOB_PATTERNS } from './file-types.js';
 
@@ -16,6 +15,7 @@ const GLOB_IGNORE = [
   '**/.claude/**',
   '**/.trash/**',
   '**/*_副本/**',
+  '**/ai全局管理/**',
 ];
 
 // 扫描一个源下所有可读文件（含 stat）。
@@ -70,8 +70,8 @@ const latest = (files) =>
   files.length ? new Date(Math.max(...files.map((f) => f.mtime.getTime()))).toISOString() : null;
 
 // 某源下最近修改的可读文件，按 mtime 倒序
-export async function listRecent(source, limit = 50) {
-  const files = await scanReadable(source);
+export async function listRecent(source, limit = 50, { project, mount } = {}) {
+  const files = (await scanReadable(source)).filter((file) => (!project || (source === 'work' && file.path.split('/')[0] === project)) && (!mount || (source === 'custom' && file.path.split('/')[0] === mount)));
   files.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
   return files.slice(0, limit).map((f) => ({
     name: f.name,
@@ -177,12 +177,7 @@ export async function buildHomeOverview() {
     };
   });
 
-  let progress = null;
-  try {
-    progress = await parseProgress(SOURCES_BY_ID.learn.root);
-  } catch {
-    progress = null;
-  }
+  const progress = null;
 
   return {
     global: {

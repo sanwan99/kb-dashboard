@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const IGNORE_NAMES = new Set([
   '.git', '.DS_Store', 'node_modules', 'target', 'dist',
-  '.vite', '.claude', '.codex_tmp', '.obsidian', '.trash',
+  '.vite', '.claude', '.codex_tmp', '.obsidian', '.trash', 'ai全局管理',
 ]);
 
 const isIgnored = (name) => {

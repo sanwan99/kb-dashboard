@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { SOURCES } from './sources.js';
 import { listMounts, onMountChange } from './custom-sources.js';
+import { isReadableTextExt } from './file-types.js';
 
 const IGNORED = [
   /(^|[\/\\])\../,        // 点开头：.git .obsidian .DS_Store 等
@@ -12,6 +13,7 @@ const IGNORED = [
   /\/\.vite\//,
   /\/\.trash\//,
   /_副本\//,
+  /(?:^|[\/\\])ai全局管理(?:[\/\\]|$)/,
 ];
 
 const listeners = new Set();
@@ -37,11 +39,32 @@ export function broadcastReindex() {
 // 批量"索引可能需要重建"回调（防抖 5s）
 let rebuildTimer = null;
 let onRebuild = null;
+let pendingFullRebuild = false;
+let pendingEvents = [];
 export function setRebuildHandler(fn) { onRebuild = fn; }
-function scheduleRebuild() {
+function isReadableEvent(kind, relPath) {
+  if (kind === 'dir') return true;
+  const ext = path.extname(String(relPath || '')).slice(1).toLowerCase();
+  return isReadableTextExt(ext);
+}
+function scheduleRebuild(evt = null) {
+  if (evt) {
+    if (!isReadableEvent(evt.kind, evt.path)) return;
+    pendingEvents.push(evt);
+  } else {
+    pendingFullRebuild = true;
+  }
   clearTimeout(rebuildTimer);
   rebuildTimer = setTimeout(() => {
-    if (onRebuild) onRebuild().catch(() => {});
+    const batch = {
+      full: pendingFullRebuild,
+      events: pendingEvents,
+    };
+    pendingFullRebuild = false;
+    pendingEvents = [];
+    if (onRebuild && (batch.full || batch.events.length > 0)) {
+      onRebuild(batch).catch(() => {});
+    }
   }, 5000);
 }
 
@@ -63,31 +86,36 @@ function attachWatcher(rootAbs, broadcastSource, broadcastPathPrefix, log) {
   };
   watcher
     .on('addDir', (abs) => {
-      broadcast({ type: 'add', kind: 'dir', source: broadcastSource, path: relTo(abs), ts: Date.now() });
-      scheduleRebuild();
+      const evt = { type: 'add', kind: 'dir', source: broadcastSource, path: relTo(abs), ts: Date.now() };
+      broadcast(evt);
+      scheduleRebuild(evt);
     })
     .on('add', (abs) => {
-      broadcast({ type: 'add', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() });
-      scheduleRebuild();
+      const evt = { type: 'add', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() };
+      broadcast(evt);
+      scheduleRebuild(evt);
     })
     .on('change', (abs) => {
-      broadcast({ type: 'change', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() });
-      scheduleRebuild();
+      const evt = { type: 'change', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() };
+      broadcast(evt);
+      scheduleRebuild(evt);
     })
     .on('unlink', (abs) => {
-      broadcast({ type: 'unlink', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() });
-      scheduleRebuild();
+      const evt = { type: 'unlink', kind: 'file', source: broadcastSource, path: relTo(abs), ts: Date.now() };
+      broadcast(evt);
+      scheduleRebuild(evt);
     })
     .on('unlinkDir', (abs) => {
-      broadcast({ type: 'unlink', kind: 'dir', source: broadcastSource, path: relTo(abs), ts: Date.now() });
-      scheduleRebuild();
+      const evt = { type: 'unlink', kind: 'dir', source: broadcastSource, path: relTo(abs), ts: Date.now() };
+      broadcast(evt);
+      scheduleRebuild(evt);
     })
     .on('error', (err) => log?.warn({ err, source: broadcastSource }, 'watcher error'));
   return watcher;
 }
 
 /** 给一个 custom 挂载点附加 watcher。挂载点不可用时跳过。 */
-export function addMountWatch(mount, log) {
+export function addMountWatch(mount, log, { rebuild = true } = {}) {
   if (!mount?.id || !mount.realRoot) return;
   if (customWatchers.has(mount.id)) return; // 已存在
   let exists = false;
@@ -99,17 +127,17 @@ export function addMountWatch(mount, log) {
   const watcher = attachWatcher(mount.realRoot, 'custom', mount.id, log);
   customWatchers.set(mount.id, { watcher, mount });
   log?.info(`watching custom/${mount.id}: ${mount.realRoot}`);
-  scheduleRebuild();
+  if (rebuild) scheduleRebuild();
 }
 
 /** 解除一个 custom 挂载点的 watcher。 */
-export function removeMountWatch(mountId, log) {
+export function removeMountWatch(mountId, log, { rebuild = true } = {}) {
   const item = customWatchers.get(mountId);
   if (!item) return;
   try { item.watcher.close(); } catch { /* ignore */ }
   customWatchers.delete(mountId);
   log?.info(`unwatching custom/${mountId}`);
-  scheduleRebuild();
+  if (rebuild) scheduleRebuild();
 }
 
 export function startWatchers(log) {
@@ -121,14 +149,14 @@ export function startWatchers(log) {
   }
   // custom 已有挂载点
   for (const m of listMounts()) {
-    addMountWatch(m, log);
+    addMountWatch(m, log, { rebuild: false });
   }
   // 监听挂载列表变化
   onMountChange((evt) => {
     if (evt.type === 'add' && evt.mount) {
-      addMountWatch(evt.mount, log);
+      addMountWatch(evt.mount, log, { rebuild: false });
     } else if (evt.type === 'remove' && evt.mount) {
-      removeMountWatch(evt.mount.id, log);
+      removeMountWatch(evt.mount.id, log, { rebuild: false });
     }
     // rename / reorder 不影响 watcher 拓扑
   });

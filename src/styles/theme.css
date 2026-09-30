@@ -187,7 +187,18 @@ html, body, #root {
 .tree-row.active-work { background: var(--src-work-bg); color: var(--src-work); font-weight: 500; }
 .tree-row.active-custom { background: var(--src-custom-bg); color: var(--src-custom); font-weight: 500; }
 
-.work-sidebar-resizer::after {
+.left-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+
+.left-sidebar-resizer::after {
   content: '';
   position: absolute;
   top: 0;
@@ -198,9 +209,9 @@ html, body, #root {
   opacity: 0.7;
 }
 
-.work-sidebar-resizer:hover::after {
+.left-sidebar-resizer:hover::after {
   width: 2px;
-  background: var(--src-work);
+  background: var(--left-sidebar-resizer-accent, var(--accent));
   opacity: 0.75;
 }
 

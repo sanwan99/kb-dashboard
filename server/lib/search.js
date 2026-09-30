@@ -2,9 +2,10 @@ import MiniSearch from 'minisearch';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fg from 'fast-glob';
-import { SOURCES } from './sources.js';
+import { SOURCES, safeResolve } from './sources.js';
 import { listMounts } from './custom-sources.js';
-import { READABLE_GLOB_PATTERNS } from './file-types.js';
+import { isReadableTextExt, READABLE_GLOB_PATTERNS } from './file-types.js';
+import { documentContent, previewSnippet } from './search-content.js';
 
 const GLOB_IGNORE = [
   '**/.git/**',
@@ -17,7 +18,11 @@ const GLOB_IGNORE = [
   '**/.claude/**',
   '**/.trash/**',
   '**/*_副本/**',
+  '**/ai全局管理/**',
 ];
+
+const MAX_INDEX_FILE_BYTES = Number(process.env.KB_SEARCH_MAX_FILE_BYTES || 1_500_000);
+const MAX_CUSTOM_INDEX_FILES_PER_MOUNT = Number(process.env.KB_SEARCH_MAX_CUSTOM_FILES_PER_MOUNT || 1200);
 
 // 中英混合分词：英文/数字按 word，中文逐字分
 export function tokenize(text) {
@@ -25,18 +30,18 @@ export function tokenize(text) {
   return text.toLowerCase().match(/[a-z0-9_-]+|[一-龥]/gu) || [];
 }
 
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 let index = null;
 let docs = new Map(); // id -> { source, path, title, content, size, mtime }
 let lastBuilt = null;
 let building = false;
+let buildPromise = null;
+let dirty = true;
+let revision = 0;
+let skippedCustomMounts = new Set();
 
-export async function buildSearchIndex(log) {
-  if (building) return;
-  building = true;
-  const t0 = Date.now();
-  const ms = new MiniSearch({
+function createSearchIndex() {
+  return new MiniSearch({
     fields: ['title', 'content'],
     storeFields: ['source', 'path', 'title', 'mtime', 'size'],
     tokenize,
@@ -49,73 +54,229 @@ export async function buildSearchIndex(log) {
       combineWith: 'AND',
     },
   });
-  const nextDocs = new Map();
+}
 
-  // 扫描目标 = 内置三源 + custom 各挂载点（每个挂载点独立 fast-glob）
-  const targets = [];
-  for (const src of SOURCES) {
-    if (src.multi) continue;
-    targets.push({ sourceId: src.id, cwd: src.root, prefix: '' });
-  }
-  for (const m of listMounts()) {
-    if (!m.available) continue;
-    targets.push({ sourceId: 'custom', cwd: m.realRoot, prefix: m.id });
-  }
+function toPosix(p) {
+  return String(p || '').split(path.sep).join('/');
+}
 
-  for (const t of targets) {
-    let files;
-    try {
-      files = await fg(READABLE_GLOB_PATTERNS, {
-        cwd: t.cwd,
-        ignore: GLOB_IGNORE,
-        stats: true,
-        followSymbolicLinks: true,
-        onlyFiles: true,
-        suppressErrors: true,
-      });
-    } catch (err) {
-      log?.warn({ err, source: t.sourceId, cwd: t.cwd }, 'scan failed');
-      continue;
+function normalizeDocPath(p) {
+  return toPosix(String(p || '').replace(/^[/\\]+/, ''));
+}
+
+function getDocId(sourceId, docPath) {
+  return `${sourceId}::${normalizeDocPath(docPath)}`;
+}
+
+function isReadablePath(p) {
+  const ext = path.extname(String(p || '')).slice(1).toLowerCase();
+  return isReadableTextExt(ext);
+}
+
+async function readDoc(sourceId, docPath, abs, knownStat = null) {
+  const normalizedPath = normalizeDocPath(docPath);
+  if (!isReadablePath(normalizedPath)) return null;
+
+  const stat = knownStat || await fs.stat(abs);
+  if (!stat.isFile()) return null;
+  if (stat.size > MAX_INDEX_FILE_BYTES) return null;
+
+  const raw = await fs.readFile(abs, 'utf8');
+  const fallbackTitle = path.basename(normalizedPath, path.extname(normalizedPath));
+  const { title, content } = documentContent(raw, path.extname(normalizedPath).slice(1).toLowerCase(), fallbackTitle);
+  return {
+    id: getDocId(sourceId, normalizedPath),
+    source: sourceId,
+    path: normalizedPath,
+    title,
+    content,
+    size: stat.size,
+    mtime: stat.mtime.toISOString(),
+  };
+}
+
+function discardDoc(id) {
+  if (!index || !docs.has(id)) return false;
+  try {
+    index.discard(id);
+  } catch {
+    // MiniSearch 可能已因自动 vacuum 清掉，Map 仍以本地状态为准收敛。
+  }
+  docs.delete(id);
+  return true;
+}
+
+function discardByPrefix(sourceId, prefix) {
+  const normalizedPrefix = normalizeDocPath(prefix);
+  if (!normalizedPrefix) return 0;
+  let count = 0;
+  for (const [id, doc] of [...docs.entries()]) {
+    if (doc.source !== sourceId) continue;
+    if (doc.path === normalizedPrefix || doc.path.startsWith(`${normalizedPrefix}/`)) {
+      if (discardDoc(id)) count += 1;
     }
-    for (const f of files) {
-      const abs = path.join(t.cwd, f.path);
-      let content = '';
+  }
+  return count;
+}
+
+export async function buildSearchIndex(log) {
+  if (buildPromise) return buildPromise;
+  building = true;
+  const buildRevision = revision;
+  const t0 = Date.now();
+  buildPromise = (async () => {
+    const ms = createSearchIndex();
+    const nextDocs = new Map();
+    const nextSkippedCustomMounts = new Set();
+
+    // 项目文档与自定义挂载点分别扫描。
+    const targets = [];
+    for (const src of SOURCES) {
+      if (src.multi) continue;
+      targets.push({ sourceId: src.id, cwd: src.root, prefix: '' });
+    }
+    for (const m of listMounts()) {
+      if (!m.available) continue;
+      targets.push({ sourceId: 'custom', cwd: m.realRoot, prefix: m.id });
+    }
+
+    for (const t of targets) {
+      let files;
       try {
-        content = await fs.readFile(abs, 'utf8');
-      } catch {
+        files = await fg(READABLE_GLOB_PATTERNS, {
+          cwd: t.cwd,
+          ignore: GLOB_IGNORE,
+          stats: true,
+          followSymbolicLinks: true,
+          onlyFiles: true,
+          suppressErrors: true,
+        });
+      } catch (err) {
+        log?.warn({ err, source: t.sourceId, cwd: t.cwd }, 'scan failed');
         continue;
       }
-      const title = path.basename(f.path, path.extname(f.path));
-      // custom 源：path 字段加 mountId 前缀，让前端 /api/file?source=custom&path=<mountId>/... 直接可用
-      const docPath = t.prefix ? path.posix.join(t.prefix, f.path.split(path.sep).join('/')) : f.path;
-      const id = `${t.sourceId}::${docPath}`;
-      const doc = {
-        id,
-        source: t.sourceId,
-        path: docPath,
-        title,
-        content,
-        size: f.stats.size,
-        mtime: new Date(f.stats.mtimeMs).toISOString(),
-      };
-      ms.add(doc);
-      nextDocs.set(id, doc);
+      const indexableFiles = files.filter((f) => Number(f.stats?.size || 0) <= MAX_INDEX_FILE_BYTES);
+      const skippedLarge = files.length - indexableFiles.length;
+      if (skippedLarge > 0) {
+        log?.warn(
+          { source: t.sourceId, mountId: t.prefix || null, skippedLarge, maxBytes: MAX_INDEX_FILE_BYTES },
+          'large files skipped from search index',
+        );
+      }
+      if (t.sourceId === 'custom' && indexableFiles.length > MAX_CUSTOM_INDEX_FILES_PER_MOUNT) {
+        nextSkippedCustomMounts.add(t.prefix);
+        log?.warn(
+          { mountId: t.prefix, files: indexableFiles.length, limit: MAX_CUSTOM_INDEX_FILES_PER_MOUNT },
+          'custom mount skipped from search index because it is too large',
+        );
+        continue;
+      }
+      for (const f of indexableFiles) {
+        const abs = path.join(t.cwd, f.path);
+        try {
+          const docPath = t.prefix ? path.posix.join(t.prefix, toPosix(f.path)) : toPosix(f.path);
+          const doc = await readDoc(t.sourceId, docPath, abs, f.stats);
+          if (!doc) continue;
+          ms.add(doc);
+          nextDocs.set(doc.id, doc);
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    index = ms;
+    docs = nextDocs;
+    skippedCustomMounts = nextSkippedCustomMounts;
+    // 索引重建 → custom 源"目录是否含可读文件"缓存失效
+    readableDirsCache = null;
+    lastBuilt = new Date();
+    dirty = revision !== buildRevision;
+    log?.info(`search index ready: ${docs.size} docs in ${Date.now() - t0} ms`);
+    return true;
+  })();
+  try {
+    return await buildPromise;
+  } finally {
+    building = false;
+    buildPromise = null;
+  }
+}
+
+export function markSearchDirty() {
+  revision += 1;
+  dirty = true;
+  readableDirsCache = null;
+}
+
+export async function ensureSearchIndex(log) {
+  if (!index || dirty) {
+    await buildSearchIndex(log);
+  }
+  return !!index && !dirty;
+}
+
+export async function applySearchEvents(events = [], log) {
+  if (!index || building || dirty) return false;
+
+  const t0 = Date.now();
+  let changed = 0;
+  for (const evt of events) {
+    if (!evt?.source || !evt.path) continue;
+
+    const sourceId = evt.source;
+    const docPath = normalizeDocPath(evt.path);
+    if (!docPath) continue;
+
+    if (evt.kind === 'dir') {
+      if (evt.type === 'unlink') changed += discardByPrefix(sourceId, docPath);
+      continue;
+    }
+
+    const id = getDocId(sourceId, docPath);
+    if (!isReadablePath(docPath)) {
+      if (evt.type === 'unlink') changed += discardDoc(id) ? 1 : 0;
+      continue;
+    }
+
+    if (evt.type === 'unlink') {
+      changed += discardDoc(id) ? 1 : 0;
+      continue;
+    }
+
+    if (evt.type !== 'add' && evt.type !== 'change') continue;
+
+    try {
+      const { abs } = safeResolve(sourceId, docPath);
+      const doc = await readDoc(sourceId, docPath, abs);
+      if (!doc) {
+        changed += discardDoc(id) ? 1 : 0;
+        continue;
+      }
+      if (docs.has(id)) discardDoc(id);
+      index.add(doc);
+      docs.set(id, doc);
+      changed += 1;
+    } catch {
+      changed += discardDoc(id) ? 1 : 0;
     }
   }
-  index = ms;
-  docs = nextDocs;
-  // 索引重建 → custom 源"目录是否含可读文件"缓存失效
-  readableDirsCache = null;
-  lastBuilt = new Date();
-  building = false;
-  log?.info(`search index ready: ${docs.size} docs in ${Date.now() - t0} ms`);
+
+  if (changed > 0) {
+    readableDirsCache = null;
+    lastBuilt = new Date();
+    log?.info(`search index updated incrementally: ${changed} changes in ${Date.now() - t0} ms`);
+  }
+  return true;
 }
 
 export const isSearchReady = () => !!index;
 export const searchStats = () => ({
   ready: !!index,
+  dirty,
   docCount: docs.size,
   lastBuilt: lastBuilt?.toISOString() || null,
+  skippedCustomMounts: [...skippedCustomMounts],
 });
 
 // custom 源："递归下去含可读文件的目录"集合（按 mountId 分组），由索引复用构建。
@@ -143,38 +304,23 @@ function ensureReadableDirsCache() {
   return map;
 }
 export function getCustomMountReadableDirs(mountId) {
+  if (skippedCustomMounts.has(mountId)) return null;
   return ensureReadableDirsCache().get(mountId) || new Set();
 }
 
-function buildSnippet(content, query, len = 160) {
-  if (!content) return '';
-  const terms = tokenize(query).filter(Boolean);
-  const lc = content.toLowerCase();
-  let pos = -1;
-  for (const t of terms) {
-    const p = lc.indexOf(t);
-    if (p !== -1 && (pos === -1 || p < pos)) pos = p;
-  }
-  if (pos === -1) {
-    const s = content.slice(0, len);
-    return s + (content.length > len ? '…' : '');
-  }
-  const start = Math.max(0, pos - 40);
-  const end = Math.min(content.length, start + len);
-  let snippet = content.slice(start, end).replace(/\n+/g, ' ');
-  for (const t of terms) {
-    if (!t) continue;
-    snippet = snippet.replace(new RegExp(escapeRe(t), 'gi'), (m) => `<mark>${m}</mark>`);
-  }
-  return (start > 0 ? '…' : '') + snippet + (end < content.length ? '…' : '');
-}
-
 export function searchIndex(query, opts = {}) {
-  if (!index) return { results: [], total: 0, grouped: { learn: [], obsidian: [], work: [], custom: [] }, ready: false };
+  if (!index) return { results: [], total: 0, grouped: { learn: [], obsidian: [], work: [], custom: [] }, ready: false, dirty };
   const raw = index.search(query);
   const sources = opts.sources?.length ? opts.sources : null;
-  const filtered = sources ? raw.filter((r) => sources.includes(r.source)) : raw;
-  const limited = filtered.slice(0, opts.limit || 60);
+  const filtered = raw.filter((hit) => {
+    if (sources && !sources.includes(hit.source)) return false;
+    if (opts.project && (hit.source !== 'work' || hit.path.split('/')[0] !== opts.project)) return false;
+    if (opts.mount && (hit.source !== 'custom' || hit.path.split('/')[0] !== opts.mount)) return false;
+    return true;
+  });
+  const offset = Math.max(0, Math.floor(Number.isFinite(Number(opts.offset)) ? Number(opts.offset) : 0));
+  const limit = Math.min(200, Math.max(1, Math.floor(Number(opts.limit) || 60)));
+  const limited = filtered.slice(offset, offset + limit);
   const hits = limited.map((r) => {
     const d = docs.get(r.id);
     return {
@@ -184,7 +330,7 @@ export function searchIndex(query, opts = {}) {
       mtime: r.mtime,
       size: r.size,
       score: Number(r.score.toFixed(3)),
-      snippet: buildSnippet(d?.content || '', query),
+      ...previewSnippet(d?.content || '', query),
     };
   });
   const grouped = { learn: [], obsidian: [], work: [], custom: [] };
@@ -192,8 +338,12 @@ export function searchIndex(query, opts = {}) {
   return {
     results: hits,
     total: filtered.length,
+    offset,
+    nextOffset: offset + hits.length,
+    hasMore: offset + hits.length < filtered.length,
     grouped,
     ready: true,
+    dirty,
     lastBuilt: lastBuilt?.toISOString() || null,
   };
 }

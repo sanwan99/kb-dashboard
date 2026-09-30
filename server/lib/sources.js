@@ -42,11 +42,11 @@ const customSource = {
 };
 
 export const SOURCES = [
-  buildSource('learn', 'learn', '学习项目', '#3766B8', '~/Desktop/文档/个人学习项目/'),
-  buildSource('obsidian', 'obsidian', 'Obsidian 知识库', '#7A5AB8', '~/Desktop/文档/个人知识库/'),
-  buildSource('work', 'work', '公司项目笔记', '#C77A35', '~/work/code/sanwan/notes/'),
+  buildSource('work', 'work', '项目文档', '#C77A35', '~/work/code/sanwan/notes/'),
   customSource,
 ];
+
+export const RETIRED_SOURCES = ['learn', 'obsidian'];
 
 export const SOURCES_BY_ID = Object.fromEntries(SOURCES.map((s) => [s.id, s]));
 
@@ -63,11 +63,17 @@ export const DEFAULT_IGNORE = [
   '**/.obsidian/**',
   '**/.trash/**',
   '**/*_副本/**',
+  '**/ai全局管理/**',
 ];
 
 // 路径安全：防止 `path=..` 之类穿透出源根
 // custom 源走多挂载点解析（path 第一段为 mountId）。
 export function safeResolve(sourceId, rel = '') {
+  if (RETIRED_SOURCES.includes(sourceId)) {
+    const err = new Error('此来源已停用，可在资料来源中按需重新添加目录。');
+    err.statusCode = 410;
+    throw err;
+  }
   const src = SOURCES_BY_ID[sourceId];
   if (!src) {
     const err = new Error(`unknown source: ${sourceId}`);

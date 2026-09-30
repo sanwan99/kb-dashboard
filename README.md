@@ -1,137 +1,68 @@
-# kb-dashboard · 个人知识库看板
+# kb-dashboard · 资料检索台
 
-本地 Markdown 三源聚合看板：**学习项目** / **Obsidian 知识库** / **公司项目笔记**。Electron 包装成桌面 App。
+把项目文档和本地目录放到一个检索入口：查关键词、筛项目、看正文，再回到本地编辑器继续工作。支持浏览器和 Electron 桌面窗口。
 
-![首页 · 三源卡片墙](screenshots/home.jpg)
+![资料检索台](screenshots/library-search.png)
 
-> 暖米白底 + Claude 风衬线标题，三源各持一色（蓝 / 紫 / 橙），800+ md 跨源全文搜索 ⌘K。
+## 使用
 
-## 特性
+- 输入关键词即可检索，`⌘K` / `Ctrl+K` 聚焦搜索。结果按相关度排列，支持项目、来源筛选和分页。
+- 左侧结果默认占约 30%。拖动分隔线调整宽度；双击或按 Enter 恢复默认；左右方向键微调。比例保存在本机。
+- 项目资料使用目录树：文件夹原位展开、折叠，支持多分支同时展开和状态记忆；点击文件在右侧预览。左右键展开或收起，上下键选择，Enter 打开，支持全部折叠。
+- 正文支持 Markdown、SQL、代码高亮、Mermaid、图片、目录跳转和专注阅读。浏览器前进、后退可恢复选中文档。
+- “最近打开”保留本机阅读记录；右键可移除记录。“设置”可调整字号、密度、主题和启动时恢复阅读。
+- “资料来源”支持连接、改名、移除本地目录。移除来源只修改连接配置，原文件保留。
+- 文件在磁盘上更新后，当前预览自动刷新。搜索结果会提示更新，由用户刷新；本地服务断开时会显示状态并尝试重连。
 
-- **三源聚合浏览**：学习项目 / Obsidian vault / 公司笔记各自保留视觉语言（蓝 / 紫 / 橙）
-- **跨源浮层搜索**：⌘K 呼出，minisearch 索引 ~800 篇 md，中英混合分词，结果点击直接跳文件
-- **Obsidian 专项**：反向链接面板 + 标签统计 + 局部图谱（入链/出链径向布局）
-- **学习状态一眼看到**：解析 `progress.md` 头部表格 + 当前断点 + 打卡串联（streak + 30 天热图）
-- **公司项目活跃任务**：扫所有 `<project>/md/codex/current/*.md` 聚合到右栏
-- **Markdown 阅读增强**：代码高亮（`highlight.js`）+ Mermaid 懒加载 + 图片嵌入（`![[image.png]]`）+ 右侧 TOC（滚动高亮）
-- **文件热更新**：chokidar 监听三源 → SSE 推送，改了 md 无需手动刷新
-- **受控删除**：右键文件或目录可移到 macOS 系统废纸篓，不做永久删除
-- **深色主题**：light / dark / system 三档，跟随系统配色切换
-- **智能链接跳转**：5 档识别（http/锚点/绝对源路径/相对 md/镜像仓库路径）
-- **Electron 打包**：单进程内置 Fastify + `asar + asarUnpack`，产出 `.app` 可直接启动
-
-## 界面预览
-
-### 学习项目 · 阶段进度 + 当前断点 + 打卡热图
-
-![学习项目](screenshots/learn.jpg)
-
-左栏 `knowledge` / `review` 切换 + 文件名过滤；中栏顶部 6 阶段进度条 + 当前断点折叠卡（`localStorage` 记忆开合）；右栏 progress.md 元信息 + 30 天连续打卡热图。
-
-### Obsidian · PARA 树 + 反链 + 局部图谱
-
-![Obsidian](screenshots/obsidian.jpg)
-
-左栏 PARA（00-收件箱 / 10-Projects / 20-Areas / ...）单级展开，输入即过滤已展开节点；右栏可折叠分区：目录 TOC / 最近打开（持久化）/ 反向链接 / 局部图谱。
-
-### 公司笔记 · 项目列表 + 活跃任务聚合
-
-![公司笔记](screenshots/work.jpg)
-
-跨项目扫所有 `<project>/md/codex/current/*.md` 聚合到右栏"活跃修改"；项目卡片角标显示活跃任务数；打开任意项目自动展开 `md/codex/current/` 并高亮当前断点。
+学习项目和 Obsidian 已退出默认入口、索引和监听。旧链接会跳回检索台并说明停用状态，原目录和已有软链保留。需要检索其中的文件时，可在“资料来源”重新连接对应目录。
 
 ## 启动
 
-### 开发模式
-
 ```bash
-cd kb-dashboard
-./start.sh       # 自动建软链 + npm install + 起前后端
+./start.sh        # 检查项目文档软链、安装依赖、启动前后端
 ```
 
-或手动：
+也可手动运行：
 
 ```bash
 npm install
-npm run dev      # 5173 前端 + 5174 后端
-# 或
-npm run app      # 顺带起 Electron 窗口
+npm run dev      # 前端 5173，API 5174
+npm run app      # 前后端及 Electron 窗口
 ```
 
-访问 http://localhost:5173 或等 Electron 窗口弹出。
+访问 [本地检索台](http://127.0.0.1:5173)。默认项目资料软链为 `data/work → ~/work/code/sanwan/notes`，路径不同时修改 `start.sh` 的 `WORK_TARGET`。其他本地目录从界面连接，配置保存在 `~/.kb-dashboard/custom-sources.json`。
 
-### 打包成桌面 App
+如果已有桌面应用占用 5174，可分别启动独立预览：
 
 ```bash
-npm run dist
+PORT=5274 npm run dev:api
+KB_API_PORT=5274 npm run dev:web -- --host 127.0.0.1 --port 5273
 ```
 
-产出在 `release/mac-arm64/kb-dashboard.app`，双击即可（首次右键"打开"绕 Gatekeeper）。可以 `cp -R release/mac-arm64/kb-dashboard.app /Applications/` 挪进应用。
+## 开发与验证
 
-## 三源软链设置
+| 命令 | 用途 |
+| --- | --- |
+| `npm test` | 状态解析、摘要、SSE 恢复及临时目录 API 回归 |
+| `npm run build` | 构建前端到 `dist/` |
+| `npm run dist` | 构建并打包到 `release/` |
+| `npm run preview-design` | 在 5180 查看归档设计稿 |
 
-首次在新机器上运行，`./start.sh` 会自动按默认路径建软链：
+API 测试仅使用临时目录和回环端口，不修改用户资料。手动测试来源管理时，可用 `KB_DATA_DIR` 指定临时数据根目录、`KB_CONFIG_DIR` 指定临时配置目录；两者都应隔离。
 
-```
-data/learn    → ~/Desktop/文档/个人学习项目
-data/obsidian → ~/Desktop/文档/个人知识库
-data/work     → ~/work/code/sanwan/notes
-```
+首次搜索时建立索引。单个超过 1.5 MB 的文件默认不参与全文索引；自定义目录超过 1200 个可读文件时仅支持浏览，界面会提示。超过 5 MB 的文本文件提示用本地编辑器打开，避免预览卡顿。这些阈值分别可用 `KB_SEARCH_MAX_FILE_BYTES`、`KB_SEARCH_MAX_CUSTOM_FILES_PER_MOUNT`、`KB_PREVIEW_MAX_FILE_BYTES` 调整。
 
-如果你的真实路径不同，手动改 `start.sh` 里的三个 `_TARGET` 变量。
+修改源码后，已运行的桌面应用仍使用旧构建。需要单独执行 `npm run dist` 并重新启动新构建，改动才会在桌面版生效。
 
-## 命令一览
+## 页面与兼容链接
 
-| 命令 | 做什么 |
-|---|---|
-| `./start.sh` | 推荐。检查软链 → install → dev |
-| `npm run dev` | 并发起前后端 |
-| `npm run dev:api` | 只跑后端（5174） |
-| `npm run dev:web` | 只跑前端（5173） |
-| `npm run app` | 前后端 + Electron 窗口 |
-| `npm run build` | 前端构建到 `dist/` |
-| `npm run dist` | 前端 build + electron-builder 打 `.app` 到 `release/` |
-| `npm run preview` | 预览 `dist/` |
-| `npm run preview-design` | 5180 端口看原始 Claude design 设计稿 |
+检索台统一使用 `/`，查询、范围、目录和当前文档保存在 URL 参数中。`/work`、`/custom`、`/search`、`/prefs` 保留跳转兼容；`/learn` 和 `/obsidian` 显示停用说明。Electron 的 `file:` 页面使用 HashRouter。
 
-## 路由
+## 文件操作边界
 
-| 路径 | 页面 | 说明 |
-|---|---|---|
-| `/` | Home | 三源卡片墙 · 顶部问候 · 学习断点 · Obsidian 常用目录 · 公司项目活跃度 |
-| `/learn` | 学习项目 | 阶段进度（可折叠）· knowledge/review 切换 · 打卡热图 |
-| `/obsidian` | Obsidian | PARA 树 · Markdown · 反链 · 标签 · 局部图谱 |
-| `/work` | 公司笔记 | 项目列表 · `md/codex/current/` 高亮 · 跨项目活跃任务聚合 |
-| `/search` | 搜索详情 | 完整搜索结果页（⌘K 浮层看不过来的时候进这里） |
-| `/prefs` | 首选项 | 源开关 · 主题 · 密度 · 字号 · 行为开关 · 快捷键 |
+读取、索引和预览均不改原文件。现有右键“移到废纸篓”仍需用户确认，仅将单个文件或目录移入 macOS 系统废纸篓；禁止删除来源根目录和自定义挂载根，不提供永久或批量删除。
 
-## 当前状态
-
-| 功能 | 状态 |
-|---|---|
-| 三源目录浏览 + Markdown 渲染 | ✅ |
-| 跨源全文搜索（浮层 + 详情页） | ✅ |
-| Obsidian 反链 / 标签 / 局部图谱 | ✅ |
-| 学习 progress 解析 + 打卡热图 | ✅ |
-| 公司笔记活跃任务聚合 | ✅ |
-| 代码高亮 + Mermaid + 图片嵌入 | ✅ |
-| 深色主题 + TOC + 文件树过滤 | ✅ |
-| Prefs 真配置持久化 | ✅ |
-| 文件热更新（SSE） | ✅ |
-| 跨页后退（URL 即状态） | ✅ |
-| Electron `.app` 打包 | ✅ |
-| `.dmg` / 代码签名 | ⬜ 需 Apple Developer ID |
-| 前端 `wikilink` 真跳转 | ⬜ 当前还是展示态（后端反链已有） |
-| 图片 lightbox 放大 | ⬜ |
-
-## 未来待办
-
-- [ ] `wikilink` onClick 跳转（vault 文件名索引已有，前端挂 handler 即可）
-- [ ] 图片 lightbox：点 `![[image.png]]` 后铺满背景放大
-- [ ] `.dmg` 签名版：申请 Apple Developer ID（$99/年）→ 配 `identity` → 正常打包不再需要右键"打开"
-- [ ] Prefs "启动时恢复上次打开的文件" 真落地（目前只保存状态）
-- [ ] 搜索高级过滤：按 tag / 时间窗 / 文件类型
-- [ ] 学习页五阶段进度条横向展开时适应窗口宽度（现在窄屏文字挤）
+`design-preview/` 是历史设计归档。旧页面文件暂时保留作兼容参考，不再作为默认功能加载。技术结构见 [CLAUDE.md](CLAUDE.md)。
 
 ## 改动记录
 
@@ -200,19 +131,6 @@ data/work     → ~/work/code/sanwan/notes
 **v0.1 — 静态设计稿**
 - Claude design 产出 9 个页面变体，`design-preview/` 归档，`npm run preview-design` 能看
 
-## 默认只读与删除例外
-
-看板默认只做目录扫描、文件读取、搜索索引和 SSE 推送。唯一写入用户知识源的受控例外是 `POST /api/file/trash`：右键确认后把单个文件或目录移到 macOS 系统废纸篓，不做永久删除，也不允许删除来源根目录或 custom 挂载根目录。
-
-全局规则要求禁止在公司项目下对 `md/` 跑 git；这仍由项目协作规则保证，删除功能只作用于文件系统废纸篓，不执行 git 操作。
-
-## 维护者提示
-
-- 改代码前读 [CLAUDE.md](./CLAUDE.md) —— 有踩过的坑和硬约束
-- 三源软链是每台机各自建的，不入 git；新机器跑 `./start.sh` 会自动建
-- 搜索 / Obsidian 索引启动时后台建（不阻塞 listen）；改了扫描逻辑要 **重启后端** 才能重建
-- 改 md 不用重启后端，chokidar + SSE 自动推送
-
 ## License
 
-MIT — 详见 [LICENSE](./LICENSE)。
+MIT — 详见 [LICENSE](LICENSE)。

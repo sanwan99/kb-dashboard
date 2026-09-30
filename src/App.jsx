@@ -1,12 +1,8 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Home from './pages/Home.jsx';
-import LearnSpacious from './pages/LearnSpacious.jsx';
-import Obsidian from './pages/Obsidian.jsx';
-import Work from './pages/Work.jsx';
-import Custom from './pages/Custom.jsx';
-import Search from './pages/Search.jsx';
-import Prefs from './pages/Prefs.jsx';
+import { useLocation } from 'react-router-dom';
+import Library from './pages/Library.jsx';
+import { parentPath } from './lib/libraryState.js';
 
 // 全局历史导航：Cmd/Ctrl + [ / ] → 浏览器 back/forward
 // 三页面的 setSelectedPath 默认 push 模式，所以依次打开的 md 都会进历史栈
@@ -32,18 +28,36 @@ function useGlobalHistoryShortcuts() {
   }, []);
 }
 
+function LibraryRedirect({ source, panel, retired }) {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  if (source) {
+    params.set('view', 'browse');
+    params.set('browse', source);
+    params.set('scope', source);
+    if (params.get('path')) {
+      params.set('source', source);
+      params.set('folder', parentPath(params.get('path')));
+    }
+  }
+  if (panel) params.set('panel', panel);
+  if (retired) {
+    params.delete('source'); params.delete('path'); params.delete('q');
+    params.set('retired', retired);
+  }
+  return <Navigate to={`/?${params}`} replace />;
+}
+
 export default function App() {
   useGlobalHistoryShortcuts();
-  return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/learn" element={<LearnSpacious />} />
-      <Route path="/obsidian" element={<Obsidian />} />
-      <Route path="/work" element={<Work />} />
-      <Route path="/custom" element={<Custom />} />
-      <Route path="/search" element={<Search />} />
-      <Route path="/prefs" element={<Prefs />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
+  return <Routes>
+    <Route path="/" element={<Library />} />
+    <Route path="/search" element={<LibraryRedirect />} />
+    <Route path="/work" element={<LibraryRedirect source="work" />} />
+    <Route path="/custom" element={<LibraryRedirect source="custom" />} />
+    <Route path="/prefs" element={<LibraryRedirect panel="settings" />} />
+    <Route path="/learn" element={<LibraryRedirect retired="learn" />} />
+    <Route path="/obsidian" element={<LibraryRedirect retired="obsidian" />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>;
 }

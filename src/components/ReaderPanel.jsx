@@ -6,6 +6,7 @@ import { Icon } from './primitives.jsx';
 import { usePrefs } from '../lib/usePrefs.js';
 import { useTheme } from '../lib/useTheme.js';
 import { getCachedSources } from '../lib/api.js';
+import { openWithApp } from '../lib/fileActions.js';
 import { isMarkdownExt, isReadablePath } from '../lib/fileTypes.js';
 
 // 滚动位置记忆：URL（pathname + search）→ scrollTop
@@ -53,6 +54,11 @@ function formatFrontmatter(meta) {
   return ordered.map((k) => `${k}: ${formatMetaValue(meta[k])}`).join('\n');
 }
 
+function isEditableTarget(target) {
+  const tag = target?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+}
+
 // 把相对路径基于当前文件目录解析成 source 内的相对路径
 function resolveRelativeReadablePath(currentPath, relHref) {
   if (!currentPath) return null;
@@ -96,14 +102,36 @@ function processLinks(container, sources, navigate, ctx = {}) {
       a.rel = 'noopener noreferrer';
       return;
     }
-    if (rawHref.startsWith('#')) return;
+    if (rawHref.startsWith('#')) {
+      a.addEventListener('click', (event) => {
+        event.preventDefault();
+        let id;
+        try { id = decodeURIComponent(rawHref.slice(1)); } catch { return; }
+        const target = [...container.querySelectorAll('[id]')].find((element) => element.id === id);
+        target?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+      });
+      return;
+    }
 
-    const href = decodeURIComponent(rawHref);
+    let href;
+    try { href = decodeURIComponent(rawHref); } catch {
+      a.removeAttribute('href');
+      a.title = '链接地址格式不正确';
+      return;
+    }
 
     // 3. 绝对路径匹配某个源
     if (href.startsWith('/')) {
       let matched = null;
       for (const s of sources) {
+        if (s.multi) {
+          for (const mount of s.mounts || []) {
+            if (typeof mount.realRoot !== 'string') continue;
+            const prefix = `${mount.realRoot.replace(/\/$/, '')}/`;
+            if (href.startsWith(prefix)) { matched = { sourceId: s.id, rel: `${mount.id}/${href.slice(prefix.length)}` }; break; }
+          }
+          if (matched) break;
+        }
         const prefixes = [s.realRoot, s.root].filter(Boolean);
         for (const prefix of prefixes) {
           const p = prefix.endsWith('/') ? prefix : prefix + '/';
@@ -380,7 +408,7 @@ async function enhanceRendered(container, { renderMermaid = true, onRequestZoom 
  *   badge   — 可选 ReactNode，显示在面包屑末尾（例如 "活跃任务"）
  *   onToc   — 可选回调，当目录变化时报告 { toc, activeId, jumpTo }，页面可把 TOC 放到自己的右栏
  */
-export function MarkdownView({ path, file, badge, onToc }) {
+export function MarkdownView({ path, file, badge, onToc, presentation = 'default', title }) {
   const mdRef = useRef(null);
   const scrollRef = useRef(null);
   // 标记"我们正在程序性写 scrollTop"（避免恢复 → 被 clamp → scroll 事件 → 覆盖 saved）
@@ -389,15 +417,41 @@ export function MarkdownView({ path, file, badge, onToc }) {
   const [activeId, setActiveId] = useState(null);
   const [sources, setSources] = useState([]);
   const [zoomedSvg, setZoomedSvg] = useState(null);
+  const openShortcutPendingRef = useRef(false);
   const prefs = usePrefs();
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  const urlKey = `${location.pathname}${location.search}`;
+  const urlKey = presentation === 'library' ? `${file.source}:${path}` : `${location.pathname}${location.search}`;
 
   useEffect(() => {
     getCachedSources().then(setSources).catch(() => setSources([]));
   }, []);
+
+  // 当前文件快捷键：Cmd+T 用 Typora 打开，复用右键菜单的安全打开链路。
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (String(e.key || '').toLowerCase() !== 't') return;
+      if (isEditableTarget(e.target)) return;
+      if (mdRef.current?.closest('[inert]')) return;
+
+      e.preventDefault();
+      if (!file?.source || !path || openShortcutPendingRef.current) return;
+
+      openShortcutPendingRef.current = true;
+      openWithApp({ source: file.source, path })
+        .catch((err) => {
+          // eslint-disable-next-line no-alert
+          window.alert(err?.message || String(err));
+        })
+        .finally(() => {
+          openShortcutPendingRef.current = false;
+        });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [file?.source, path]);
 
   // 滚动位置记忆：滚动时持续存，unmount/URL 切换时再保一次
   useEffect(() => {
@@ -544,6 +598,7 @@ export function MarkdownView({ path, file, badge, onToc }) {
         if (rect.top - top < 80) current = h.id;
         else break;
       }
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 8) current = toc.at(-1)?.id;
       setActiveId(current);
     };
     container.addEventListener('scroll', onScroll, { passive: true });
@@ -553,7 +608,7 @@ export function MarkdownView({ path, file, badge, onToc }) {
 
   const jumpTo = React.useCallback((id) => {
     const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el) el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   }, []);
 
   // 把 TOC 数据暴露给外部（页面把它渲染到自己的右栏）
@@ -571,7 +626,7 @@ export function MarkdownView({ path, file, badge, onToc }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: 'var(--bg)' }}>
-      <div
+      {presentation !== 'library' && <div
         style={{
           padding: '8px 22px',
           borderBottom: '1px solid var(--border)',
@@ -595,12 +650,12 @@ export function MarkdownView({ path, file, badge, onToc }) {
         <span style={{ marginLeft: 'auto', color: 'var(--ink-muted)' }}>
           {file.size ? `${(file.size / 1024).toFixed(1)} KB` : ''}  · {mtime}
         </span>
-      </div>
+      </div>}
 
-      <div ref={scrollRef} className="kb-scroll" style={{ flex: 1, padding: '32px 40px 40px', minHeight: 0 }}>
-        <div className="md" style={{ maxWidth: 780, margin: '0 auto' }}>
-          <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6 }}>{path}</div>
-          {frontmatterText && (
+      <div ref={scrollRef} className={`kb-scroll ${presentation === 'library' ? 'library-reading-scroll' : ''}`} style={{ flex: 1, padding: presentation === 'library' ? '24px 30px 40px' : '32px 40px 40px', minHeight: 0 }}>
+        <div className="md" style={{ maxWidth: presentation === 'library' ? 940 : 780, margin: '0 auto' }}>
+          {presentation === 'library' ? <header className="library-document-heading"><h1>{title || fileName}</h1><div><span>更新于 {mtime}</span>{file.size > 0 && <span>{(file.size / 1024).toFixed(1)} KB</span>}{typeof file.meta?.status === 'string' && <span className="library-document-status">{file.meta.status}</span>}</div></header> : <div className="kb-mono" style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6 }}>{path}</div>}
+          {frontmatterText && presentation !== 'library' && (
             <div
               className="kb-mono"
               style={{
@@ -618,7 +673,8 @@ export function MarkdownView({ path, file, badge, onToc }) {
               {frontmatterText}
             </div>
           )}
-          <div ref={mdRef} dangerouslySetInnerHTML={{ __html: file.html }} />
+          {frontmatterText && presentation === 'library' && <details className="library-frontmatter"><summary>文档信息</summary><pre>{frontmatterText}</pre></details>}
+          <div ref={mdRef} className={presentation === 'library' ? 'library-markdown-content' : undefined} dangerouslySetInnerHTML={{ __html: file.html }} />
         </div>
       </div>
 
