@@ -3,6 +3,8 @@ import { useSyncExternalStore } from 'react';
 const STORAGE_KEY = 'kb-prefs';
 
 const DEFAULTS = {
+  surface: 'liquid', // 'liquid' | 'flat'
+  glassIntensity: 40, // 0-100
   density: 'standard', // 'breathe' | 'standard' | 'compact'
   fontSize: 16,        // 12-20
   sources: { work: true, custom: true },
@@ -14,6 +16,12 @@ const DEFAULTS = {
   },
 };
 
+function normalizeGlassIntensity(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : DEFAULTS.glassIntensity;
+}
+
 function readStored() {
   if (typeof window === 'undefined') return DEFAULTS;
   try {
@@ -21,6 +29,8 @@ function readStored() {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw);
     return {
+      surface: parsed.surface === 'flat' ? 'flat' : DEFAULTS.surface,
+      glassIntensity: normalizeGlassIntensity(parsed.glassIntensity),
       density: parsed.density || DEFAULTS.density,
       fontSize: parsed.fontSize || DEFAULTS.fontSize,
       sources: { work: parsed.sources?.work !== false, custom: parsed.sources?.custom !== false },
@@ -51,6 +61,12 @@ function applyToDocument(prefs) {
   if (typeof document === 'undefined') return;
   document.documentElement.style.setProperty('--md-font-size', `${prefs.fontSize}px`);
   document.documentElement.dataset.density = prefs.density;
+  document.documentElement.dataset.surface = prefs.surface;
+  const intensity = normalizeGlassIntensity(prefs.glassIntensity);
+  document.documentElement.dataset.glassIntensity = String(intensity);
+  document.documentElement.dataset.glassBoost = intensity >= 70 ? 'high' : 'normal';
+  document.documentElement.style.setProperty('--glass-level', String(intensity / 100));
+  document.documentElement.style.setProperty('--glass-boost', String(Math.max(0, (intensity - 40) / 60)));
 }
 
 export function bootstrapPrefs() {
@@ -67,6 +83,13 @@ export function usePrefs() {
 }
 
 // 变更 helpers
+export function setSurface(surface) {
+  if (!['liquid', 'flat'].includes(surface)) return;
+  write({ ...getSnapshot(), surface });
+}
+export function setGlassIntensity(value) {
+  write({ ...getSnapshot(), glassIntensity: normalizeGlassIntensity(Number(value)) });
+}
 export function setDensity(d) {
   if (!['breathe', 'standard', 'compact'].includes(d)) return;
   write({ ...snapshot, density: d });

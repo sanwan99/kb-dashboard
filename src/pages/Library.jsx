@@ -15,9 +15,11 @@ import { buildFileMenuItems, openWithApp, revealInFinder, buildAbsPathFor, copyT
 import { READABLE_EXTS } from '../lib/fileTypes.js';
 import { ACTIVE_LIBRARY_SOURCES, parseLibraryState, scopeOptions, matchesScope, fileIdentity, fileTitle, sourceLabel, relativeTime, parentPath } from '../lib/libraryState.js';
 import useLibraryRecent from '../lib/useLibraryRecent.js';
+import useLiquidGlass from '../lib/useLiquidGlass.js';
 import { browseRoot, isInsideDirectory } from '../lib/libraryTree.js';
 import brand from '../assets/workspace-mark.png';
 import '../styles/library.css';
+import '../styles/liquid-glass.css';
 
 const PAGE_SIZE = 40;
 const emptyResults = { items: [], total: 0, nextOffset: 0, hasMore: false, label: '搜索结果' };
@@ -36,6 +38,8 @@ export default function Library() {
   const navigate = useNavigate();
   const state = useMemo(() => parseLibraryState(location.search), [location.search]);
   const prefs = usePrefs();
+  const rootRef = useRef(null);
+  useLiquidGlass(rootRef, prefs.surface === 'liquid', prefs.glassIntensity);
   const recent = useLibraryRecent();
   const contextMenu = useContextMenu();
   const [sources, setSources] = useState([]);
@@ -337,7 +341,7 @@ export default function Library() {
   const groupOptions = [{ value: 'all', label: '全部项目与目录' }, { value: 'work', label: '全部项目文档' }, { value: 'custom', label: '全部本地目录' }, ...projects.map((project) => ({ value: `work:${project.name}`, label: project.name })), ...mounts.map((mount) => ({ value: `custom:${mount.id}`, label: `${mount.name}${mount.available ? '' : '（不可用）'}` }))];
   const safeScope = groupOptions.some((option) => option.value === state.scope) ? state.scope : 'all';
 
-  return <div className={`library-root ${focused ? 'is-focused' : ''}`}>
+  return <div ref={rootRef} className={`library-root ${focused ? 'is-focused' : ''}`}>
     <div className="library-shell" inert={modal ? '' : undefined} aria-hidden={modal ? true : undefined}>
       <aside className="library-rail" aria-label="主导航"><div className="library-window-drag" /><button type="button" className="library-brand" aria-label="资料检索台" onClick={() => { setDraft(''); updateLocation({ q: null, view: 'search', scope: 'all' }); }}><img src={brand} alt="资料检索台图标" /></button>
         {[['search', 'search', '检索'], ['browse', 'folder', '项目资料'], ['recent', 'clock', '最近打开']].map(([view, icon, label]) => <button key={view} type="button" className={`library-rail-link ${state.view === view ? 'active' : ''}`} aria-current={state.view === view ? 'page' : undefined} onClick={() => changeView(view)}><Icon name={icon} size={23} /><span>{label}</span></button>)}

@@ -625,7 +625,7 @@ export function MarkdownView({ path, file, badge, onToc, presentation = 'default
   }, [onToc, jumpTo]);
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: 'var(--bg)' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: presentation === 'library' ? 'var(--library-document-bg, var(--bg))' : 'var(--bg)' }}>
       {presentation !== 'library' && <div
         style={{
           padding: '8px 22px',
