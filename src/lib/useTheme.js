@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { syncWindowMaterial } from './windowMaterial.js';
 
 const STORAGE_KEY = 'kb-theme';
 // 'light' | 'dark' | 'system'
@@ -21,6 +22,8 @@ function displayOf(mode) {
 function apply(mode) {
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.theme = displayOf(mode);
+  document.documentElement.dataset.themeMode = mode;
+  syncWindowMaterial();
 }
 
 const listeners = new Set();

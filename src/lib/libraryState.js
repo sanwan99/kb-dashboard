@@ -3,11 +3,11 @@ export const ACTIVE_LIBRARY_SOURCES = ['work', 'custom'];
 export function parseLibraryState(search) {
   const params = search instanceof URLSearchParams ? search : new URLSearchParams(search);
   const source = ACTIVE_LIBRARY_SOURCES.includes(params.get('source')) ? params.get('source') : null;
-  const view = ['search', 'browse', 'recent'].includes(params.get('view')) ? params.get('view') : 'search';
+  const view = ['search', 'browse', 'recent', 'updated'].includes(params.get('view')) ? params.get('view') : 'search';
   const scope = /^(?:all|work|custom|work:[^/]+|custom:[^/]+)$/.test(params.get('scope') || '') ? params.get('scope') : 'all';
   const path = source && params.get('path') ? params.get('path').replace(/^\/+/, '') : null;
   const browseSource = ACTIVE_LIBRARY_SOURCES.includes(params.get('browse')) ? params.get('browse') : source || 'work';
-  return { q: params.get('q') || '', view, scope, source, path, browseSource, folder: params.get('folder') || '', panel: params.get('panel') || null };
+  return { q: view === 'updated' ? '' : params.get('q') || '', view, scope, source, path, browseSource, folder: params.get('folder') || '', panel: params.get('panel') || null };
 }
 
 export function scopeOptions(scope, enabledSources = ACTIVE_LIBRARY_SOURCES) {
@@ -25,6 +25,14 @@ export function matchesScope(file, scope) {
   if (scope === 'all') return true;
   const [source, ...parts] = scope.split(':');
   return file.source === source && (!parts.length || file.path.split('/')[0] === parts.join(':'));
+}
+
+export function shouldRefreshUpdatedList(event, state, enabledSources = ACTIVE_LIBRARY_SOURCES) {
+  if (state.view !== 'updated') return false;
+  if (event.type === 'reindex') return true;
+  return ['add', 'change', 'unlink'].includes(event.type)
+    && enabledSources.includes(event.source)
+    && matchesScope({ source: event.source, path: event.path || '' }, state.scope);
 }
 
 export function fileIdentity(file) {

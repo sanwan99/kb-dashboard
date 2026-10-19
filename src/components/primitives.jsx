@@ -38,6 +38,10 @@ export const Icon = ({ name, size = 16, stroke = 1.6, color = 'currentColor', st
       return <svg {...common}><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>;
     case 'clock':
       return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>;
+    case 'refresh':
+      return <svg {...common}><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.1 6.1a8 8 0 0 1 12.6 1.7L20 12M4 12l1.3 4.2a8 8 0 0 0 12.6 1.7"/></svg>;
+    case 'target':
+      return <svg {...common}><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>;
     case 'tag':
       return <svg {...common}><path d="M20 12l-8 8-8-8V4h8l8 8z"/><circle cx="8" cy="8" r="1.2"/></svg>;
     case 'settings':

@@ -58,7 +58,8 @@ export default function useLiquidGlass(rootRef, enabled, glassIntensity = 40) {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     // SVG backdrop displacement is supported by Chromium (including Electron).
     // Other engines retain the CSS blur/highlight treatment below.
-    const svgBackdrop = /Chrome|Chromium|Electron/.test(navigator.userAgent)
+    const svgBackdrop = !window.__KB_WINDOW_MATERIAL__?.nativeBackdrop
+      && /Chrome|Chromium|Electron/.test(navigator.userAgent)
       && CSS.supports('backdrop-filter', 'url("#kb-glass")');
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('aria-hidden', 'true');

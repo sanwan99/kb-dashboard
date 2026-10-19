@@ -8,6 +8,7 @@ import { useTheme } from '../lib/useTheme.js';
 import { getCachedSources } from '../lib/api.js';
 import { openWithApp } from '../lib/fileActions.js';
 import { isMarkdownExt, isReadablePath } from '../lib/fileTypes.js';
+import { createMermaidRenderer } from '../lib/mermaidRenderer.js';
 
 // 滚动位置记忆：URL（pathname + search）→ scrollTop
 // MarkdownView 切换文件时会被父组件 unmount/remount，所以用模块级 Map 跨实例存
@@ -215,6 +216,8 @@ function loadMermaid() {
   return mermaidPromise;
 }
 
+const renderDiagram = createMermaidRenderer(loadMermaid);
+
 // 基于项目 CSS 变量构造 mermaid themeVariables，跟随 light/dark 主题。
 // 配色尽量贴 Claude 风：暖米白 + 节点白底、暖橙边框，线条走 ink-muted。
 function computeMermaidConfig() {
@@ -339,7 +342,7 @@ function attachCopyButton(pre, codeEl) {
   pre.appendChild(btn);
 }
 
-async function enhanceRendered(container, { renderMermaid = true, onRequestZoom } = {}) {
+async function enhanceRendered(container, { renderMermaid = true, onRequestZoom, isCurrent = () => true } = {}) {
   if (!container) return;
 
   // 1. 代码块语法高亮 + 复制按钮（跳过 mermaid）
@@ -360,25 +363,18 @@ async function enhanceRendered(container, { renderMermaid = true, onRequestZoom 
   if (!renderMermaid) return;
   const mermaidBlocks = container.querySelectorAll('pre > code.language-mermaid');
   if (mermaidBlocks.length > 0) {
-    const mermaid = await loadMermaid();
-    // 每次渲染前用最新 CSS 变量初始化，跟随 light/dark 主题
-    mermaid.initialize(computeMermaidConfig());
-    // 清扫上一次渲染遗留在 body 上的 stray 临时元素（mermaid 失败时会留下"Syntax error in text"占位 SVG）
-    document.querySelectorAll('body > [id^="mermaid-"], body > [id^="dmermaid-"]').forEach((n) => n.remove());
-
-    let idx = 0;
+    const config = computeMermaidConfig();
     for (const el of mermaidBlocks) {
+      const ownsBlock = () => isCurrent() && container.isConnected && container.contains(el);
+      if (!ownsBlock()) return;
       if (el.dataset.mermaidDone === '1') continue;
       const src = el.textContent;
       const wrapper = document.createElement('div');
       wrapper.className = 'md-mermaid';
-      const renderId = `mermaid-${Date.now()}-${idx++}`;
-      // 提供一个 hidden 临时容器给 mermaid.render，避免它把临时元素塞到 body 末尾
-      const tempHost = document.createElement('div');
-      tempHost.style.cssText = 'position:absolute;left:-99999px;top:-99999px;width:0;height:0;overflow:hidden;visibility:hidden;';
-      document.body.appendChild(tempHost);
       try {
-        const { svg } = await mermaid.render(renderId, src, tempHost);
+        const result = await renderDiagram(src, config, { isCurrent: ownsBlock, document: container.ownerDocument });
+        if (!result || !ownsBlock()) return;
+        const { svg } = result;
         wrapper.innerHTML = svg;
         wrapper.title = '双击放大';
         wrapper.style.cursor = 'zoom-in';
@@ -387,12 +383,15 @@ async function enhanceRendered(container, { renderMermaid = true, onRequestZoom 
           if (typeof onRequestZoom === 'function') onRequestZoom(svg);
         });
       } catch (err) {
-        wrapper.innerHTML = `<div class="md-mermaid-error">Mermaid 渲染失败: ${String(err.message || err)}</div><pre><code>${src.replace(/</g, '&lt;')}</code></pre>`;
-      } finally {
-        // 清理临时容器 + 兜底清理 body 上同 id 的 stray
-        tempHost.remove();
-        document.getElementById(renderId)?.remove();
-        document.getElementById('d' + renderId)?.remove();
+        if (!ownsBlock()) return;
+        const message = document.createElement('div');
+        message.className = 'md-mermaid-error';
+        message.textContent = `Mermaid 渲染失败: ${String(err.message || err)}`;
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = src;
+        pre.appendChild(code);
+        wrapper.append(message, pre);
       }
       el.parentElement?.replaceWith(wrapper);
       el.dataset.mermaidDone = '1';
@@ -480,24 +479,18 @@ export function MarkdownView({ path, file, badge, onToc, presentation = 'default
   const isMarkdown = isMarkdownExt(file?.ext);
   const frontmatterText = isMarkdown ? formatFrontmatter(file.meta) : '';
 
-  // 渲染后处理：代码高亮 / Mermaid / 抽 TOC / 接管 a 链接
+  // 渲染后处理：代码高亮 / Mermaid / 抽 TOC。
   // 依赖 resolvedTheme：主题切换时把 innerHTML 重置，让 mermaid 等重新按新配色渲染
   useEffect(() => {
-    if (mdRef.current && mdRef.current.innerHTML !== file.html) {
-      mdRef.current.innerHTML = file.html;
-    }
-    enhanceRendered(mdRef.current, {
-      renderMermaid: isMarkdown && prefs.behavior.renderMermaid,
-      onRequestZoom: setZoomedSvg,
-    });
-    if (isMarkdown) {
-      processLinks(mdRef.current, sources, navigate, {
-        sourceId: file?.source,
-        mdPath: path,
-      });
-    }
     const container = mdRef.current;
     if (!container) return;
+    let active = true;
+    container.innerHTML = file.html;
+    enhanceRendered(container, {
+      renderMermaid: isMarkdown && prefs.behavior.renderMermaid,
+      onRequestZoom: setZoomedSvg,
+      isCurrent: () => active && mdRef.current === container,
+    });
     const headings = container.querySelectorAll('h2, h3');
     const items = [];
     const seen = new Set();
@@ -512,7 +505,13 @@ export function MarkdownView({ path, file, badge, onToc, presentation = 'default
     });
     setToc(items);
     setActiveId(items[0]?.id || null);
-  }, [file?.html, file?.ext, prefs.behavior.renderMermaid, sources, resolvedTheme]);
+    return () => { active = false; };
+  }, [file?.html, file?.ext, prefs.behavior.renderMermaid, resolvedTheme]);
+
+  useEffect(() => {
+    if (!isMarkdown || !sources.length) return;
+    processLinks(mdRef.current, sources, navigate, { sourceId: file?.source, mdPath: path });
+  }, [sources, navigate, path, file?.source, file?.html, file?.ext, prefs.behavior.renderMermaid, resolvedTheme]);
 
   // 恢复滚动位置：必须在 innerHTML 注入之后跑，所以独立成一个依赖 file.html 的 useEffect。
   // 放在 html-setting effect 之后声明，保证 effect 执行顺序在它之后。
@@ -763,6 +762,7 @@ function MermaidZoomModal({ svg, onClose }) {
         }}
       >
         <div
+          className="md-mermaid-zoom"
           dangerouslySetInnerHTML={{ __html: svg }}
           style={{
             position: 'absolute', top: '50%', left: '50%',

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLibraryState, scopeOptions, matchesScope, fileTitle, sourceLabel, parentPath } from '../src/lib/libraryState.js';
+import { parseLibraryState, scopeOptions, matchesScope, shouldRefreshUpdatedList, fileTitle, sourceLabel, parentPath } from '../src/lib/libraryState.js';
 import { documentContent, previewSnippet } from '../server/lib/search-content.js';
 
 test('链接保留查询、项目范围和中文路径；旧来源不能进入预览', () => {
@@ -17,6 +17,29 @@ test('范围筛选尊重暂停来源，支持带冒号的项目名', () => {
   assert.equal(matchesScope({ source: 'work', path: 'api:v2/README.md' }, 'work:api:v2'), true);
   assert.equal(matchesScope({ source: 'work', path: 'IAM2/a.md' }, 'work:IAM'), false);
   assert.equal(parentPath('IAM/a/b.md'), 'IAM/a');
+});
+
+test('最近更新链接独立于关键词，保留来源范围与选中文档', () => {
+  const state = parseLibraryState(new URLSearchParams({ view: 'updated', q: '旧查询', scope: 'custom:manual', source: 'custom', path: 'manual/手册.md' }));
+  assert.equal(state.view, 'updated');
+  assert.equal(state.q, '');
+  assert.equal(state.scope, 'custom:manual');
+  assert.equal(state.source, 'custom');
+  assert.equal(state.path, 'manual/手册.md');
+  assert.equal(parseLibraryState('?view=recent').view, 'recent');
+});
+
+test('最近更新只刷新当前启用来源与范围，新增、修改、删除和重建均生效', () => {
+  const state = { view: 'updated', scope: 'work:IAM' };
+  for (const type of ['add', 'change', 'unlink']) assert.equal(shouldRefreshUpdatedList({ type, source: 'work', path: 'IAM/手册.md' }, state), true);
+  assert.equal(shouldRefreshUpdatedList({ type: 'unlink', kind: 'dir', source: 'work', path: 'IAM' }, state), true);
+  assert.equal(shouldRefreshUpdatedList({ type: 'change', source: 'work', path: 'Message/a.md' }, state), false);
+  assert.equal(shouldRefreshUpdatedList({ type: 'change', source: 'work', path: 'IAM/a.md' }, state, ['custom']), false);
+  assert.equal(shouldRefreshUpdatedList({ type: 'change', source: 'learn', path: 'IAM/a.md' }, state), false);
+  assert.equal(shouldRefreshUpdatedList({ type: 'reindex' }, state), true);
+  assert.equal(shouldRefreshUpdatedList({ type: 'reindex' }, { view: 'recent', scope: 'all' }), false);
+  assert.equal(shouldRefreshUpdatedList({ type: 'change', source: 'custom', path: 'manual/a.md' }, { view: 'updated', scope: 'custom:manual' }), true);
+  assert.equal(shouldRefreshUpdatedList({ type: 'change', source: 'custom', path: 'other/a.md' }, { view: 'updated', scope: 'custom:manual' }), false);
 });
 
 test('索引与预览标题优先正文名称，不把 frontmatter 和代码块当标题', () => {

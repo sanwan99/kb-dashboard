@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './primitives.jsx';
 import { getTree } from '../lib/api.js';
-import { directoryAncestors, isInsideDirectory, readableEntries, visibleTreeRows } from '../lib/libraryTree.js';
+import { directoryAncestors, isInsideDirectory, readableEntries, treeRevealStatus, visibleTreeRows } from '../lib/libraryTree.js';
 import { parentPath } from '../lib/libraryState.js';
 
-export default function LibraryTree({ source, rootPath, entries, loading, selectedPath, initialFolder, refreshKey, onSelect, onContextMenu }) {
+export default function LibraryTree({ source, rootPath, entries, loading, selectedPath, initialFolder, refreshKey, revealRequest, onRevealComplete, onSelect, onContextMenu }) {
   const storageKey = `kb-library-tree-v1:${source}:${rootPath}`;
   const previousSelection = useRef(selectedPath);
   const [expanded, setExpanded] = useState(() => {
@@ -25,6 +25,7 @@ export default function LibraryTree({ source, rootPath, entries, loading, select
   const requests = useRef(new Map());
   const mounted = useRef(true);
   const focusAfterLoad = useRef(null);
+  const pendingReveal = useRef(null);
 
   const updateDirectory = (path, value) => {
     directoryRef.current = { ...directoryRef.current, [path]: value };
@@ -75,6 +76,16 @@ export default function LibraryTree({ source, rootPath, entries, loading, select
     setFocusedPath(selectedPath);
   }, [selectedPath, rootPath]);
 
+  useEffect(() => {
+    pendingReveal.current = revealRequest || null;
+    if (!revealRequest) return;
+    const ancestors = directoryAncestors(parentPath(revealRequest.path), rootPath);
+    focusAfterLoad.current = null;
+    setExpanded((previous) => new Set([...previous, ...ancestors]));
+    setFocusedPath(revealRequest.path);
+    for (const path of ancestors) if (directoryRef.current[path]?.status === 'error') loadDirectory(path, true);
+  }, [revealRequest, rootPath, loadDirectory]);
+
   const rows = useMemo(() => visibleTreeRows(entries, expanded, directories, rootPath), [entries, expanded, directories, rootPath]);
   const items = rows.filter((row) => row.entry);
   const tabStop = items.some(({ entry }) => entry.path === focusedPath) ? focusedPath : items[0]?.entry.path;
@@ -87,13 +98,27 @@ export default function LibraryTree({ source, rootPath, entries, loading, select
     }
   }, [rows, expanded, loading, loadDirectory]);
 
-  const focusRow = (path) => {
+  const focusRow = (path, block = 'nearest') => {
     focusAfterLoad.current = null;
     setFocusedPath(path);
     const element = [...(treeRef.current?.querySelectorAll('[role="treeitem"]') || [])].find((item) => item.dataset.path === path);
     element?.focus({ preventScroll: true });
-    element?.scrollIntoView({ block: 'nearest' });
+    element?.scrollIntoView({ block });
   };
+
+  useEffect(() => {
+    const request = pendingReveal.current;
+    if (!request || loading) return;
+    const status = treeRevealStatus(request.path, rootPath, entries, directoryRef.current);
+    if (status === 'pending') return;
+    if (status === 'ready') {
+      const element = [...(treeRef.current?.querySelectorAll('[role="treeitem"]') || [])].find((item) => item.dataset.path === request.path);
+      if (!element) return;
+      focusRow(request.path, 'center');
+    }
+    pendingReveal.current = null;
+    onRevealComplete?.(request.id, status);
+  }, [rows, loading, entries, rootPath, revealRequest, onRevealComplete]);
 
   useEffect(() => {
     const path = focusAfterLoad.current;

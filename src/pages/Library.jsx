@@ -13,15 +13,16 @@ import { usePrefs } from '../lib/usePrefs.js';
 import { useContextMenu } from '../lib/useContextMenu.jsx';
 import { buildFileMenuItems, openWithApp, revealInFinder, buildAbsPathFor, copyToClipboard } from '../lib/fileActions.js';
 import { READABLE_EXTS } from '../lib/fileTypes.js';
-import { ACTIVE_LIBRARY_SOURCES, parseLibraryState, scopeOptions, matchesScope, fileIdentity, fileTitle, sourceLabel, relativeTime, parentPath } from '../lib/libraryState.js';
+import { ACTIVE_LIBRARY_SOURCES, parseLibraryState, scopeOptions, matchesScope, shouldRefreshUpdatedList, fileIdentity, fileTitle, sourceLabel, relativeTime, parentPath } from '../lib/libraryState.js';
 import useLibraryRecent from '../lib/useLibraryRecent.js';
 import useLiquidGlass from '../lib/useLiquidGlass.js';
-import { browseRoot, isInsideDirectory } from '../lib/libraryTree.js';
+import { browseRoot, fileTreeLocation, isInsideDirectory } from '../lib/libraryTree.js';
 import brand from '../assets/workspace-mark.png';
 import '../styles/library.css';
 import '../styles/liquid-glass.css';
 
 const PAGE_SIZE = 40;
+const RECENT_UPDATE_LIMIT = 60;
 const emptyResults = { items: [], total: 0, nextOffset: 0, hasMore: false, label: '搜索结果' };
 const isAbort = (error) => error?.name === 'AbortError';
 
@@ -67,6 +68,8 @@ export default function Library() {
   const [modal, setModalState] = useState(null);
   const [toast, setToast] = useState('');
   const [opening, setOpening] = useState(false);
+  const [locateRequest, setLocateRequest] = useState(null);
+  const locateSequence = useRef(0);
   const searchRef = useRef(null);
   const listRef = useRef(null);
   const stateRef = useRef(state);
@@ -188,15 +191,15 @@ export default function Library() {
         const entries = data.entries.filter((entry) => entry.type === 'dir' || READABLE_EXTS.has(entry.ext));
         return { ...emptyResults, items: entries.map((entry) => ({ ...entry, source: state.browseSource, title: entry.name })), total: entries.length, label: '项目资料' };
       }
-      if (!state.q.trim()) {
+      if (state.view === 'updated' || !state.q.trim()) {
         const values = await Promise.allSettled(options.sources.map(async (source) => {
-          const data = await getRecent(source, 60, { signal: controller.signal, project: options.project, mount: options.mount });
+          const data = await getRecent(source, RECENT_UPDATE_LIMIT, { signal: controller.signal, project: options.project, mount: options.mount });
           return data.items.map((item) => ({ ...item, source, title: fileTitle(item) }));
         }));
         if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
         if (values.every((value) => value.status === 'rejected')) throw values[0].reason;
-        const items = values.flatMap((value) => value.status === 'fulfilled' ? value.value : []).filter((item) => matchesScope(item, state.scope)).sort((a, b) => new Date(b.mtime) - new Date(a.mtime)).slice(0, 60);
-        return { ...emptyResults, items, total: items.length, label: '最近修改' };
+        const items = values.flatMap((value) => value.status === 'fulfilled' ? value.value : []).filter((item) => matchesScope(item, state.scope)).sort((a, b) => new Date(b.mtime) - new Date(a.mtime)).slice(0, RECENT_UPDATE_LIMIT);
+        return { ...emptyResults, items, total: items.length, label: state.view === 'updated' ? '最近更新' : '最近修改' };
       }
       const data = await search(state.q, { ...options, limit: PAGE_SIZE, signal: controller.signal });
       return { ...data, items: data.results, label: '搜索结果', stats: data };
@@ -236,6 +239,10 @@ export default function Library() {
     let needsReconnect = false;
     const unsubscribe = subscribeFileEvents((event) => {
       const current = stateRef.current;
+      if (shouldRefreshUpdatedList(event, current, enabledSources)) {
+        clearTimeout(directoryTimer);
+        directoryTimer = setTimeout(() => setRefreshVersion((version) => version + 1), 350);
+      }
       if (event.type === 'reindex') { if (current.q) setOutdated(true); return; }
       if (!ACTIVE_LIBRARY_SOURCES.includes(event.source)) return;
       if (current.q) setOutdated(true);
@@ -254,9 +261,28 @@ export default function Library() {
       }
     });
     return () => { unsubscribe(); clearTimeout(directoryTimer); };
-  }, [refreshCatalog]);
+  }, [refreshCatalog, enabledKey]);
+
+  const cancelLocate = () => { locateSequence.current += 1; setLocateRequest(null); };
+
+  const locateCurrentFile = () => {
+    const target = fileTreeLocation(selected);
+    if (!target || !enabledSources.includes(target.source)) return;
+    contextMenu.close(); setModalState(null); setFocused(false); setTocOpen(false); setDraft('');
+    const id = ++locateSequence.current;
+    setLocateRequest({ id, source: target.source, path: target.path, root: browseRoot({ scope: target.scope, browseSource: target.browse, folder: target.folder }) });
+    updateLocation(target);
+  };
+
+  const onRevealComplete = useCallback((id, status) => {
+    if (id !== locateSequence.current) return;
+    setLocateRequest(null);
+    if (status === 'missing') setToast('当前文件未在目录中找到，可能已移动。');
+    if (status === 'error') setToast('文件所在目录暂时无法加载，请重试。');
+  }, []);
 
   const openFile = (item, { external = false, replace = false } = {}) => {
+    cancelLocate();
     contextMenu.close(); setModalState(null);
     if (external) {
       setDraft('');
@@ -265,12 +291,14 @@ export default function Library() {
   };
 
   const changeScope = (scope) => {
+    cancelLocate();
     const options = scopeOptions(scope);
     const browse = options.sources[0] || 'work';
     updateLocation({ scope, source: null, path: null, ...(state.view === 'browse' ? { browse, folder: options.project || options.mount || '' } : {}) });
   };
 
   const changeView = (view) => {
+    cancelLocate();
     setFocused(false); setTocOpen(false); setDraft('');
     const patch = { view, q: null, retired: null };
     if (view === 'browse') { patch.browse = state.source || scopeOptions(state.scope).sources[0] || 'work'; patch.folder = state.path ? parentPath(state.path) : scopeOptions(state.scope).project || scopeOptions(state.scope).mount || ''; }
@@ -337,6 +365,7 @@ export default function Library() {
   const enabledForScope = scopeOptions(state.scope, enabledSources).sources;
   const pendingQuery = draft.trim() !== state.q;
   const canChoose = !loading && !pendingQuery && results.key === queryKey;
+  const canLocate = Boolean(selected && enabledSources.includes(selected.source) && !file?.binary);
   const tabStop = Math.max(0, results.items.findIndex((item) => fileIdentity(item) === selectedId));
   const groupOptions = [{ value: 'all', label: '全部项目与目录' }, { value: 'work', label: '全部项目文档' }, { value: 'custom', label: '全部本地目录' }, ...projects.map((project) => ({ value: `work:${project.name}`, label: project.name })), ...mounts.map((mount) => ({ value: `custom:${mount.id}`, label: `${mount.name}${mount.available ? '' : '（不可用）'}` }))];
   const safeScope = groupOptions.some((option) => option.value === state.scope) ? state.scope : 'all';
@@ -344,7 +373,7 @@ export default function Library() {
   return <div ref={rootRef} className={`library-root ${focused ? 'is-focused' : ''}`}>
     <div className="library-shell" inert={modal ? '' : undefined} aria-hidden={modal ? true : undefined}>
       <aside className="library-rail" aria-label="主导航"><div className="library-window-drag" /><button type="button" className="library-brand" aria-label="资料检索台" onClick={() => { setDraft(''); updateLocation({ q: null, view: 'search', scope: 'all' }); }}><img src={brand} alt="资料检索台图标" /></button>
-        {[['search', 'search', '检索'], ['browse', 'folder', '项目资料'], ['recent', 'clock', '最近打开']].map(([view, icon, label]) => <button key={view} type="button" className={`library-rail-link ${state.view === view ? 'active' : ''}`} aria-current={state.view === view ? 'page' : undefined} onClick={() => changeView(view)}><Icon name={icon} size={23} /><span>{label}</span></button>)}
+        {[['search', 'search', '检索'], ['browse', 'folder', '项目资料'], ['recent', 'clock', '最近打开'], ['updated', 'refresh', '最近更新']].map(([view, icon, label]) => <button key={view} type="button" className={`library-rail-link ${state.view === view ? 'active' : ''}`} aria-current={state.view === view ? 'page' : undefined} onClick={() => changeView(view)}><Icon name={icon} size={23} /><span>{label}</span></button>)}
         <button type="button" className="library-rail-link" onClick={() => showModal('sources')}><Icon name="inbox" size={23} /><span>资料来源</span></button>
         <button type="button" className="library-rail-link bottom" onClick={() => showModal('settings')}><Icon name="settings" size={23} /><span>设置</span></button>
       </aside>
@@ -356,7 +385,7 @@ export default function Library() {
         </section>
         <LibrarySplitPane focused={focused}>
           <section id="library-results-pane" ref={listRef} className="library-results" aria-label="资料列表" aria-busy={loading || pendingQuery}>
-            <div className="library-results-header"><span>{state.view === 'browse' ? '目录树' : results.label}</span><span aria-live="polite">{loading || pendingQuery ? '正在查找…' : `${results.total} ${state.view === 'browse' ? '项 · 当前层级' : '份文档'}`}</span></div>
+            <div className="library-results-header"><span>{state.view === 'browse' ? '目录树' : results.label}</span><span aria-live="polite">{loading || pendingQuery ? '正在查找…' : `${results.total} ${state.view === 'browse' ? '项 · 当前层级' : '份文档'}`}</span>{state.view === 'browse' && <button type="button" className="library-icon-button" aria-label="在目录树中定位当前文件" title="定位当前文件" disabled={!canLocate} onClick={locateCurrentFile}><Icon name="target" size={17} /></button>}{state.view === 'updated' && <button type="button" className="library-icon-button" aria-label="刷新最近更新" disabled={loading} onClick={() => setRefreshVersion((version) => version + 1)}><Icon name="refresh" size={16} /></button>}</div>
             {state.view === 'browse' && <div className="library-folder-bar">
               <Icon name="folder-open" size={17} />
               <span title={directoryRoot || (state.browseSource === 'work' ? '项目文档' : '本地目录')}>{state.browseSource === 'custom' && directoryRoot ? mounts.find((mount) => mount.id === directoryRoot)?.name || directoryRoot : directoryRoot || (state.browseSource === 'work' ? '全部项目' : '全部本地目录')}</span>
@@ -373,19 +402,21 @@ export default function Library() {
               selectedPath={state.source === state.browseSource ? state.path : null}
               initialFolder={state.folder}
               refreshKey={`${catalogVersion}:${refreshVersion}`}
+              revealRequest={locateRequest?.source === state.browseSource && locateRequest.root === directoryRoot && locateRequest.path === state.path ? locateRequest : null}
+              onRevealComplete={onRevealComplete}
               onSelect={openFile}
               onContextMenu={menuFor}
             /> : loading && !results.items.length ? <Busy label={state.q && !stats?.ready ? '首次检索，正在准备本地索引…' : '正在查找资料…'} /> : !results.items.length && !loading ? <Notice title={state.view === 'recent' ? '还没有阅读记录' : state.q ? '没有找到相关资料' : '这里暂时没有文档'} action={state.q ? '清空关键词' : '浏览项目资料'} onAction={() => { if (state.q) { setDraft(''); updateLocation({ q: null, source: null, path: null }); } else changeView('browse'); }}>{state.q ? '试试更短的关键词，或切换来源范围。' : '选择一个目录，打开 Markdown 或 SQL 文件。'}</Notice> : <div className={`library-result-list ${loading || pendingQuery ? 'pending' : ''}`}>
               {results.items.map((item, index) => <button type="button" className={`library-result ${fileIdentity(item) === selectedId ? 'active' : ''} ${item.type === 'dir' ? 'directory' : ''}`} key={fileIdentity(item)} disabled={!canChoose || item.available === false} aria-pressed={item.type !== 'dir' ? fileIdentity(item) === selectedId : undefined} tabIndex={index === tabStop ? 0 : -1} onClick={() => chooseResult(item)} onKeyDown={(event) => moveResult(event, index)} onContextMenu={(event) => menuFor(event, item)}>
-                <Icon name={item.type === 'dir' ? 'folder' : 'file'} size={23} /><span className="library-result-copy"><strong><LibraryHighlight text={fileTitle(item)} query={state.q} /></strong><span className="library-result-meta">{item.type === 'dir' ? item.available === false ? '目录不可用' : '打开目录' : `${sourceLabel(item, mounts)}${item.mtime ? ` · ${relativeTime(item.mtime)}` : ''}`}</span>{item.preview && <span className="library-result-excerpt"><LibraryHighlight text={item.preview} query={state.q} /></span>}{!item.preview && item.type !== 'dir' && <span className="library-result-path" title={item.path}>{item.path}</span>}</span>{item.type === 'dir' && <Icon name="chev-r" size={16} />}
+                <Icon name={item.type === 'dir' ? 'folder' : 'file'} size={23} /><span className="library-result-copy"><strong><LibraryHighlight text={fileTitle(item)} query={state.q} /></strong><span className="library-result-meta">{item.type === 'dir' ? item.available === false ? '目录不可用' : '打开目录' : `${sourceLabel(item, mounts)}${item.mtime ? ` · ${state.view === 'updated' ? '更新于 ' : ''}${relativeTime(item.mtime)}` : ''}`}</span>{item.preview && <span className="library-result-excerpt"><LibraryHighlight text={item.preview} query={state.q} /></span>}{!item.preview && item.type !== 'dir' && <span className="library-result-path" title={item.path}>{item.path}</span>}</span>{item.type === 'dir' && <Icon name="chev-r" size={16} />}
               </button>)}
             </div>}
             {pageError && <div className="library-refresh-note error" role="alert"><span>加载更多失败</span><button type="button" onClick={loadMore}>重试</button></div>}
             {results.hasMore && !loading && <button type="button" className="library-load-more" disabled={loadingMore || outdated} onClick={loadMore}><Icon name="chev-d" size={16} />{loadingMore ? '正在加载…' : outdated ? '刷新后继续加载' : '加载更多'}<span>{results.items.length} / {results.total}</span></button>}
-            {state.view !== 'browse' && !results.hasMore && results.items.length > 0 && !loading && <div className="library-list-end">{state.q ? `已显示全部 ${results.total} 条结果` : results.label === '最近修改' ? '按修改时间排列' : '已到列表末尾'}</div>}
+            {state.view !== 'browse' && !results.hasMore && results.items.length > 0 && !loading && <div className="library-list-end">{state.view === 'updated' ? `按更新时间排列，最多 ${RECENT_UPDATE_LIMIT} 份` : state.q ? `已显示全部 ${results.total} 条结果` : results.label === '最近修改' ? '按修改时间排列' : '已到列表末尾'}</div>}
           </section>
           <section className="library-reader" aria-label="文档预览">
-            {selected && <div className="library-reader-toolbar"><div className="library-breadcrumb"><span>{sourceLabel(selected, mounts)}</span><span>/</span><span title={state.path}>{state.path.split('/').slice(1, -1).slice(-2).join(' / ') || '文档'}</span></div><div className="library-reader-actions"><button type="button" className="library-text-button" aria-pressed={focused} onClick={() => setFocused(!focused)}><Icon name="book" size={18} /><span>{focused ? '退出专注' : '专注阅读'}</span></button>{toc.toc.length > 0 && <button type="button" className="library-text-button" aria-expanded={tocOpen} onClick={() => setTocOpen(!tocOpen)}><Icon name="list" size={18} /><span>目录</span></button>}<button type="button" className="library-text-button" onClick={copyPath}><Icon name="link" size={17} /><span>复制路径</span></button><button type="button" className="library-button primary" disabled={opening} onClick={openEditor}><Icon name="play" size={15} />{opening ? '正在打开…' : '用 Typora 打开'}</button></div></div>}
+            {selected && <div className="library-reader-toolbar"><div className="library-breadcrumb"><span>{sourceLabel(selected, mounts)}</span><span>/</span><span title={state.path}>{state.path.split('/').slice(1, -1).slice(-2).join(' / ') || '文档'}</span></div><div className="library-reader-actions"><button type="button" className="library-text-button" aria-pressed={focused} onClick={() => setFocused(!focused)}><Icon name="book" size={18} /><span>{focused ? '退出专注' : '专注阅读'}</span></button>{toc.toc.length > 0 && <button type="button" className="library-text-button" aria-expanded={tocOpen} onClick={() => setTocOpen(!tocOpen)}><Icon name="list" size={18} /><span>目录</span></button>}<button type="button" className="library-text-button" title="在目录树中定位当前文件" disabled={!canLocate} onClick={locateCurrentFile}><Icon name="target" size={17} /><span>定位当前文件</span></button><button type="button" className="library-text-button" onClick={copyPath}><Icon name="link" size={17} /><span>复制路径</span></button><button type="button" className="library-button primary" disabled={opening} onClick={openEditor}><Icon name="play" size={15} />{opening ? '正在打开…' : '用 Typora 打开'}</button></div></div>}
             {tocOpen && <nav className="library-toc" aria-label="文档目录">{toc.toc.map((entry) => <button type="button" key={entry.id} aria-current={toc.activeId === entry.id ? 'location' : undefined} onClick={() => { toc.jumpTo(entry.id); setTocOpen(false); }}>{entry.text}</button>)}</nav>}
             {!selected ? <Notice title="找到资料，接着工作" icon="book">输入关键词搜索项目文档，或从左侧打开一份资料。支持 Markdown、SQL 和流程图预览。</Notice> : !enabledSources.includes(state.source) ? <Notice title="此来源已暂停显示" action="管理资料来源" onAction={() => showModal('sources')} icon="folder" /> : fileLoading ? <Busy label="正在打开文档…" /> : fileError ? <div className="library-file-error"><Notice title={fileError.status === 404 ? '文档可能已移动' : fileError.status === 413 ? '文件较大，适合在编辑器中阅读' : '文档暂时无法打开'} action="重新加载" onAction={() => setFileVersion((version) => version + 1)}>{fileError.message}</Notice><div className="library-error-actions"><button type="button" className="library-text-button" onClick={() => { recent.remove(selected); setRefreshVersion((version) => version + 1); updateLocation({ source: null, path: null }, { replace: true }); }}>移除这条阅读记录</button><button type="button" className="library-text-button" onClick={() => openFile(selected, { external: true })}>查看所在目录</button></div></div> : file?.binary ? <Notice title="此文件暂不支持直接预览" icon="file" action="在 Finder 中显示" onAction={() => revealInFinder({ source: state.source, path: state.path }).catch((error) => setToast(error.message))} /> : file ? <MarkdownView key={selectedId} path={state.path} file={file} title={selectedTitle} presentation="library" onToc={setToc} /> : null}
           </section>

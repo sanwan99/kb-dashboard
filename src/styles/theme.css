@@ -352,6 +352,12 @@ html, body, #root {
   text-align: center;
 }
 .md .md-mermaid svg { max-width: 100%; height: auto; }
+.md .md-mermaid svg p,
+.md-mermaid-render-host svg p,
+.md-mermaid-zoom svg p {
+  margin: 0;
+  line-height: 1.5;
+}
 .md .md-mermaid-error {
   color: var(--danger);
   font-family: var(--font-mono);

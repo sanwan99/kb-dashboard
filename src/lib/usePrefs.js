@@ -1,10 +1,13 @@
 import { useSyncExternalStore } from 'react';
+import { syncWindowMaterial } from './windowMaterial.js';
 
 const STORAGE_KEY = 'kb-prefs';
 
 const DEFAULTS = {
   surface: 'liquid', // 'liquid' | 'flat'
   glassIntensity: 40, // 0-100
+  windowOpacity: 10, // 0-100
+  readerOpacity: 2, // 0-100
   density: 'standard', // 'breathe' | 'standard' | 'compact'
   fontSize: 16,        // 12-20
   sources: { work: true, custom: true },
@@ -22,6 +25,18 @@ function normalizeGlassIntensity(value) {
     : DEFAULTS.glassIntensity;
 }
 
+function normalizeReaderOpacity(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : DEFAULTS.readerOpacity;
+}
+
+function normalizeWindowOpacity(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : DEFAULTS.windowOpacity;
+}
+
 function readStored() {
   if (typeof window === 'undefined') return DEFAULTS;
   try {
@@ -31,6 +46,8 @@ function readStored() {
     return {
       surface: parsed.surface === 'flat' ? 'flat' : DEFAULTS.surface,
       glassIntensity: normalizeGlassIntensity(parsed.glassIntensity),
+      windowOpacity: normalizeWindowOpacity(parsed.windowOpacity),
+      readerOpacity: normalizeReaderOpacity(parsed.readerOpacity),
       density: parsed.density || DEFAULTS.density,
       fontSize: parsed.fontSize || DEFAULTS.fontSize,
       sources: { work: parsed.sources?.work !== false, custom: parsed.sources?.custom !== false },
@@ -67,6 +84,9 @@ function applyToDocument(prefs) {
   document.documentElement.dataset.glassBoost = intensity >= 70 ? 'high' : 'normal';
   document.documentElement.style.setProperty('--glass-level', String(intensity / 100));
   document.documentElement.style.setProperty('--glass-boost', String(Math.max(0, (intensity - 40) / 60)));
+  document.documentElement.style.setProperty('--glass-reader-opacity', String(normalizeReaderOpacity(prefs.readerOpacity) / 100));
+  document.documentElement.style.setProperty('--glass-window-opacity', String(normalizeWindowOpacity(prefs.windowOpacity) / 100));
+  syncWindowMaterial();
 }
 
 export function bootstrapPrefs() {
@@ -89,6 +109,12 @@ export function setSurface(surface) {
 }
 export function setGlassIntensity(value) {
   write({ ...getSnapshot(), glassIntensity: normalizeGlassIntensity(Number(value)) });
+}
+export function setReaderOpacity(value) {
+  write({ ...getSnapshot(), readerOpacity: normalizeReaderOpacity(Number(value)) });
+}
+export function setWindowOpacity(value) {
+  write({ ...getSnapshot(), windowOpacity: normalizeWindowOpacity(Number(value)) });
 }
 export function setDensity(d) {
   if (!['breathe', 'standard', 'compact'].includes(d)) return;

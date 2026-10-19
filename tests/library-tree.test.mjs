@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browseRoot, directoryAncestors, readableEntries, visibleTreeRows } from '../src/lib/libraryTree.js';
+import { browseRoot, directoryAncestors, fileTreeLocation, readableEntries, treeRevealStatus, visibleTreeRows } from '../src/lib/libraryTree.js';
 
 const folder = (path) => ({ name: path.split('/').pop(), type: 'dir', path });
 const file = (path) => ({ name: path.split('/').pop(), type: 'file', path, ext: path.split('.').pop() });
@@ -39,4 +39,32 @@ test('旧深层目录链接保留项目根，选中文件只展开当前项目�
   assert.deepEqual(directoryAncestors('project/md/需求', 'project'), ['project/md', 'project/md/需求']);
   assert.deepEqual(directoryAncestors('project2/md', 'project'), []);
   assert.deepEqual(readableEntries([folder('a'), file('a.md'), file('a.sql'), file('image.png')]).map((entry) => entry.path), ['a', 'a.md', 'a.sql']);
+});
+
+test('定位文件切到对应项目或挂载点，保留当前文件并清除检索和弹窗', () => {
+  const location = fileTreeLocation({ source: 'work', path: 'project/md/需求/方案.md' });
+  assert.deepEqual(location, { view: 'browse', browse: 'work', scope: 'work:project', folder: 'project/md/需求', source: 'work', path: 'project/md/需求/方案.md', q: null, panel: null, retired: null });
+  assert.equal(browseRoot({ ...location, browseSource: location.browse }), 'project');
+  const custom = fileTreeLocation({ source: 'custom', path: 'mount/目录/笔记.md' });
+  assert.equal(custom.scope, 'custom:mount');
+  assert.equal(custom.browse, 'custom');
+  assert.equal(custom.folder, 'mount/目录');
+  const top = fileTreeLocation({ source: 'work', path: 'README.md' });
+  assert.equal(top.scope, 'work');
+  assert.equal(top.folder, '');
+  assert.equal(fileTreeLocation({ source: 'learn', path: 'file.md' }), null);
+  assert.equal(fileTreeLocation(null), null);
+});
+
+test('定位等待祖先目录逐级加载，区分找到、缺失、不可用与读取失败', () => {
+  const path = 'project/md/需求/方案.md';
+  assert.equal(treeRevealStatus(path, 'project', root, {}), 'pending');
+  assert.equal(treeRevealStatus(path, 'project', root, { 'project/md': directories['project/md'] }), 'pending');
+  assert.equal(treeRevealStatus(path, 'project', root, directories), 'ready');
+  assert.equal(treeRevealStatus('project/md/需求/缺失.md', 'project', root, directories), 'missing');
+  assert.equal(treeRevealStatus(path, 'other', root, directories), 'missing');
+  assert.equal(treeRevealStatus(path, 'project', root, { 'project/md': { status: 'error' } }), 'error');
+  assert.equal(treeRevealStatus(path, 'project', [{ ...folder('project/md'), available: false }], {}), 'missing');
+  assert.equal(treeRevealStatus('README.md', '', [file('README.md')], {}), 'ready');
+  assert.equal(treeRevealStatus('mount/笔记.md', 'mount', [file('mount/笔记.md')], {}), 'ready');
 });

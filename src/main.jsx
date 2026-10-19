@@ -4,10 +4,12 @@ import { BrowserRouter, HashRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { bootstrapTheme } from './lib/useTheme.js';
 import { bootstrapPrefs } from './lib/usePrefs.js';
+import { bootstrapWindowMaterial } from './lib/windowMaterial.js';
 import './styles/theme.css';
 
 bootstrapTheme();
 bootstrapPrefs();
+bootstrapWindowMaterial();
 
 // Electron on macOS 用 hiddenInset 标题栏，红绿灯压在顶栏左上角。
 // 打上平台标记，让 CSS 给顶栏左侧预留空间 + 开启窗口拖拽区。

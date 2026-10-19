@@ -1,7 +1,7 @@
 // Electron 主进程（CommonJS）
 // dev：加载 Vite dev server，由 `npm run dev` 并发起后端
 // prod：loadFile dist + 主进程内启动 Fastify（in-process）
-const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog, ipcMain, nativeTheme } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -73,18 +73,16 @@ function createWindow() {
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: false, // prod 下需要 preload 使用 contextBridge（sandbox:true 时限制严格）
+    preload: path.join(__dirname, 'preload.cjs'),
   };
-  // 仅 prod 需要 preload 注入 API_BASE
-  if (!isDev) {
-    webPreferences.preload = path.join(__dirname, 'preload.cjs');
-  }
 
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 980,
     minHeight: 620,
-    backgroundColor: '#FAF9F5',
+    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#FAF9F5',
+    ...(process.platform === 'darwin' ? { transparent: true } : {}),
     title: '资料检索台',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 14 },
@@ -115,6 +113,20 @@ function createWindow() {
     }
   });
 }
+
+// 窗口透出真实后景，简洁模式和减少透明度时恢复不透明底色。
+ipcMain.on('window:material', (event, options) => {
+  if (process.platform !== 'darwin' || event.senderFrame !== event.sender.mainFrame) return;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return;
+  if (!options || !['liquid', 'flat'].includes(options.surface)
+    || !['light', 'dark', 'system'].includes(options.theme)
+    || typeof options.reducedTransparency !== 'boolean') return;
+  if (nativeTheme.themeSource !== options.theme) nativeTheme.themeSource = options.theme;
+  const glass = options.surface === 'liquid' && !options.reducedTransparency && !nativeTheme.prefersReducedTransparency;
+  win.setVibrancy(null);
+  win.setBackgroundColor(glass ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#1a1816' : '#FAF9F5');
+});
 
 // IPC：自定义来源 - 选目录（Electron 模式下走原生 dialog）
 ipcMain.handle('dialog:select-directory', async (_evt, opts = {}) => {

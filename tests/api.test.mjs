@@ -67,11 +67,27 @@ test('真实 API：索引、分页、范围、预览、来源管理、文件更�
     assert.equal((await get('/api/file?source=work&path=IAM/large.sql')).status, 413);
     assert.equal((await get('/api/file?source=work&path=../outside.md')).status, 400);
   });
+  await t.test('最近更新按文件修改时间倒序，支持项目范围与数量上限', async () => {
+    await fs.mkdir(path.join(data, 'work/Recent'));
+    const now = Date.now();
+    const names = ['old.sql', 'middle.md', 'new.md'];
+    for (let i = 0; i < names.length; i++) {
+      const file = path.join(data, 'work/Recent', names[i]);
+      await fs.writeFile(file, '# 最近更新样例');
+      const time = new Date(now - (names.length - i) * 60000);
+      await fs.utimes(file, time, time);
+    }
+    const items = (await get('/api/recent?source=work&project=Recent&limit=2')).data.items;
+    assert.deepEqual(items.map((item) => item.path), ['Recent/new.md', 'Recent/middle.md']);
+    assert.ok(new Date(items[0].mtime) > new Date(items[1].mtime));
+  });
   await t.test('临时来源增改移除，不改原文件；挂载可立即检索', async () => {
     const added = await write('/api/custom-sources', 'POST', { path: custom, name: '测试目录' });
     assert.equal(added.status, 200); const id = added.data.id;
     assert.equal((await write('/api/custom-sources', 'POST', { path: custom })).status, 409);
     assert.equal((await get(`/api/search?q=localmounttoken&source=custom&mount=${id}`)).data.total, 1);
+    const customRecent = (await get(`/api/recent?source=custom&mount=${id}`)).data.items;
+    assert.deepEqual(customRecent.map((item) => item.path), [`${id}/手册.md`]);
     assert.equal((await write(`/api/custom-sources/${id}`, 'PATCH', { name: '改名目录' })).data.name, '改名目录');
     assert.equal((await write(`/api/custom-sources/${id}`, 'DELETE')).status, 200);
     assert.equal((await get('/api/search?q=localmounttoken')).data.total, 0);
